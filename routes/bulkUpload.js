@@ -14,21 +14,6 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Bulk upload routes are working!' });
 });
 
-// Test POST endpoint without auth
-router.post('/test-upload', upload.fields([
-  { name: 'excel', maxCount: 1 },
-  { name: 'photos', maxCount: 100 }
-]), async (req, res) => {
-  console.log('=== TEST UPLOAD ENDPOINT HIT ===');
-  console.log('Files received:', req.files);
-  res.json({ 
-    message: 'Test upload endpoint reached successfully',
-    files: req.files ? Object.keys(req.files) : 'No files',
-    hasExcel: !!req.files?.excel,
-    hasPhotos: !!req.files?.photos
-  });
-});
-
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -65,6 +50,21 @@ const upload = multer({
       cb(new Error('Unexpected field'), false);
     }
   }
+});
+
+// Test POST endpoint without auth (for debugging)
+router.post('/test-upload', upload.fields([
+  { name: 'excel', maxCount: 1 },
+  { name: 'photos', maxCount: 100 }
+]), async (req, res) => {
+  console.log('=== TEST UPLOAD ENDPOINT HIT ===');
+  console.log('Files received:', req.files);
+  res.json({ 
+    message: 'Test upload endpoint reached successfully',
+    files: req.files ? Object.keys(req.files) : 'No files',
+    hasExcel: !!req.files?.excel,
+    hasPhotos: !!req.files?.photos
+  });
 });
 
 // Bulk upload students
