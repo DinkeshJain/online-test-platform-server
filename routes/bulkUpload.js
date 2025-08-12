@@ -3,7 +3,6 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcryptjs');
 const Student = require('../models/Student');
 const { adminAuth } = require('../middleware/auth');
 
@@ -185,12 +184,9 @@ router.post('/students', adminAuth, upload.fields([
         }
 
         // Create new student
-        const saltRounds = 10;
-        const hashedPassword = await bcrypt.hash(enrollmentNo, saltRounds);
-        
         const studentObj = {
           username: username?.toLowerCase(),
-          password: hashedPassword, // Hash the password
+          password: enrollmentNo, // Use plain password - model will hash it automatically
           enrollmentNo: enrollmentNo,
           batchYear: batchYear || '2024',  // Default to current year
           course: course || 'General',     // Default course
@@ -214,20 +210,41 @@ router.post('/students', adminAuth, upload.fields([
 
         const newStudent = new Student(studentObj);
         
-        console.log(`Attempting to save student: ${enrollmentNo} - ${fullName}`);
+        console.log(`\n=== Attempting to save student ${enrollmentNo} ===`);
+        console.log('Student object:', {
+          username: studentObj.username,
+          enrollmentNo: studentObj.enrollmentNo,
+          fullName: studentObj.fullName,
+          emailId: studentObj.emailId,
+          mobileNo: studentObj.mobileNo,
+          batchYear: studentObj.batchYear,
+          course: studentObj.course
+        });
+        
+        // Validate before saving
+        const validationError = newStudent.validateSync();
+        if (validationError) {
+          console.error('Validation error:', validationError.message);
+          results.failed.push({
+            data: studentData,
+            error: `Validation failed: ${validationError.message}`
+          });
+          continue;
+        }
+        
         await newStudent.save();
-        console.log(`Successfully saved student: ${enrollmentNo}`);
+        console.log(`✅ Successfully saved student: ${enrollmentNo} - ${fullName}`);
 
         results.successful.push({
           enrollmentNo,
           fullName,
-          username,
-          emailId,
+          username: studentObj.username,
+          emailId: studentObj.emailId,
           photo: photoMap[enrollmentNo] ? 'Uploaded' : 'Not found'
         });
       } catch (error) {
-        console.error('Error saving student:', error);
-        console.error('Student data:', studentData);
+        console.error(`❌ Error saving student ${enrollmentNo}:`, error.message);
+        console.error('Full error:', error);
         results.failed.push({
           data: studentData,
           error: error.message
