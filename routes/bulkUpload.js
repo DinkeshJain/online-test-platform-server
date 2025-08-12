@@ -178,7 +178,8 @@ router.post('/students', adminAuth, upload.fields([
           username,
           emailId,
           photo: photoMap[enrollmentNo] ? 'Uploaded' : 'Not found'
-        });      } catch (error) {
+        });
+      } catch (error) {
         console.error('Error saving student:', error);
         results.failed.push({
           data: studentData,
