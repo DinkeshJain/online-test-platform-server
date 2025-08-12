@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 const Student = require('../models/Student');
 const { adminAuth } = require('../middleware/auth');
 
@@ -11,6 +12,21 @@ const router = express.Router();
 // Test endpoint to check if bulk upload routes are working
 router.get('/test', (req, res) => {
   res.json({ message: 'Bulk upload routes are working!' });
+});
+
+// Test POST endpoint without auth
+router.post('/test-upload', upload.fields([
+  { name: 'excel', maxCount: 1 },
+  { name: 'photos', maxCount: 100 }
+]), async (req, res) => {
+  console.log('=== TEST UPLOAD ENDPOINT HIT ===');
+  console.log('Files received:', req.files);
+  res.json({ 
+    message: 'Test upload endpoint reached successfully',
+    files: req.files ? Object.keys(req.files) : 'No files',
+    hasExcel: !!req.files?.excel,
+    hasPhotos: !!req.files?.photos
+  });
 });
 
 // Configure multer for file uploads
@@ -56,6 +72,11 @@ router.post('/students', adminAuth, upload.fields([
   { name: 'excel', maxCount: 1 },
   { name: 'photos', maxCount: 100 }
 ]), async (req, res) => {
+  console.log('=== BULK UPLOAD ENDPOINT HIT ===');
+  console.log('Headers:', req.headers);
+  console.log('Files:', req.files);
+  console.log('Body:', req.body);
+  
   try {
     if (!req.files.excel || !req.files.excel[0]) {
       return res.status(400).json({ message: 'Excel file is required' });
@@ -127,6 +148,25 @@ router.post('/students', adminAuth, upload.fields([
           continue;
         }
 
+        // Validate email format
+        const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(emailId)) {
+          results.failed.push({
+            data: studentData,
+            error: `Invalid email format: ${emailId}`
+          });
+          continue;
+        }
+
+        // Validate mobile number (should be exactly 10 digits)
+        if (!mobileNo || mobileNo.length !== 10 || !/^\d{10}$/.test(mobileNo)) {
+          results.failed.push({
+            data: studentData,
+            error: `Invalid mobile number: ${mobileNo}. Should be exactly 10 digits.`
+          });
+          continue;
+        }
+
         // Check if student already exists
         const existingStudent = await Student.findOne({
           $or: [
@@ -145,17 +185,20 @@ router.post('/students', adminAuth, upload.fields([
         }
 
         // Create new student
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(enrollmentNo, saltRounds);
+        
         const studentObj = {
           username: username?.toLowerCase(),
-          password: enrollmentNo, // Use enrollment number as password
+          password: hashedPassword, // Hash the password
           enrollmentNo: enrollmentNo,
-          batchYear: batchYear || 'Unknown',
-          course: course || 'Unknown',
+          batchYear: batchYear || '2024',  // Default to current year
+          course: course || 'General',     // Default course
           admissionDate: admissionDate ? new Date(admissionDate) : new Date(),
           fullName: fullName,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date(),
+          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('2000-01-01'), // Default DOB
           gender: gender || 'Other',
-          emailId: emailId,
+          emailId: emailId?.toLowerCase(),
           mobileNo: mobileNo,
           aadharNo: aadharNo || null,
           casteCategory: casteCategory || null,
@@ -170,7 +213,10 @@ router.post('/students', adminAuth, upload.fields([
         };
 
         const newStudent = new Student(studentObj);
+        
+        console.log(`Attempting to save student: ${enrollmentNo} - ${fullName}`);
         await newStudent.save();
+        console.log(`Successfully saved student: ${enrollmentNo}`);
 
         results.successful.push({
           enrollmentNo,
@@ -181,6 +227,7 @@ router.post('/students', adminAuth, upload.fields([
         });
       } catch (error) {
         console.error('Error saving student:', error);
+        console.error('Student data:', studentData);
         results.failed.push({
           data: studentData,
           error: error.message
@@ -191,8 +238,13 @@ router.post('/students', adminAuth, upload.fields([
     // Clean up uploaded Excel file
     fs.unlinkSync(excelFile.path);
 
+    console.log(`Upload completed: ${results.successful.length} successful, ${results.failed.length} failed`);
+
     res.json({
       message: 'Students data upload completed',
+      successCount: results.successful.length,
+      failureCount: results.failed.length,
+      totalProcessed: results.total,
       results
     });
 
