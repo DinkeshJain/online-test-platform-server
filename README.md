@@ -132,10 +132,12 @@ npm start
 - Improved data validation and error handling
 
 ### Grading System
-- 10-point grading scale (O/A/B/C/D/E/F)
+- 10-point grading scale (O/A/B/C/D/E/F/W)
 - Grade point calculation based on external marks
 - Visual highlighting for failed students in Excel exports
 - Minimum external marks requirement (35%) for passing
+- **Absence Handling**: Students who don't attempt tests receive 'W' grade with 0 grade points
+- Color-coded Excel exports: Red for 'F' (failed), Orange for 'W' (absent)
 
 ### Demo/Regular Exam Support
 - Separate filtering and display for demo and regular exams

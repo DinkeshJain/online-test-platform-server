@@ -45,14 +45,23 @@ const auth = async (req, res, next) => {
 };
 
 const adminAuth = async (req, res, next) => {
+  console.log('\n🔐 ADMIN AUTH MIDDLEWARE');
+  console.log('Authorization header:', req.headers.authorization ? 'Present' : 'Missing');
+  
   try {
     await auth(req, res, () => {
+      console.log('👤 User authenticated:', req.user ? req.user.username : 'No user');
+      console.log('🏷️ User type:', req.userType);
+      
       if (req.userType !== 'admin') {
+        console.log('❌ Access denied: User is not admin');
         return res.status(403).json({ message: 'Access denied. Admin role required.' });
       }
+      console.log('✅ Admin access granted');
       next();
     });
   } catch (error) {
+    console.error('❌ Admin auth failed:', error.message);
     res.status(401).json({ message: 'Authorization failed' });
   }
 };

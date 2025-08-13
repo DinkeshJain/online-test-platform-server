@@ -6,10 +6,45 @@ const { auth, adminAuth, adminOrEvaluatorAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Helper function to check if submission is allowed (for ongoing tests)
+function canSubmitTest(test, testStartedAt) {
+  // First check if the test is marked as active
+  if (!test.isActive) {
+    return false;
+  }
+  
+  // If no time restrictions are set, just use the isActive flag
+  if (!test.activeFrom || !test.activeTo) {
+    return test.isActive;
+  }
+  
+  const now = new Date();
+  const activeTo = new Date(test.activeTo);
+  const testStartTime = new Date(testStartedAt);
+  
+  // Check if dates are valid
+  if (isNaN(activeTo.getTime()) || isNaN(testStartTime.getTime())) {
+    return test.isActive;
+  }
+  
+  // Calculate maximum allowed submission time
+  const extensionPeriod = test.extensionPeriod || 10; // minutes
+  const submissionDeadline = new Date(activeTo.getTime() + (extensionPeriod * 60 * 1000));
+  
+  // Also check if student has had enough time to complete the test
+  const testDurationMs = test.duration * 60 * 1000; // test duration in milliseconds
+  const studentTimeLimit = new Date(testStartTime.getTime() + testDurationMs);
+  
+  // Student can submit if:
+  // 1. It's before the extended deadline, AND
+  // 2. They haven't exceeded their individual time limit
+  return now <= submissionDeadline && now <= studentTimeLimit;
+}
+
 // Submit test answers
 router.post('/', auth, async (req, res) => {
   try {
-    const { testId, answers, timeSpent, proctoring } = req.body;
+    const { testId, answers, timeSpent, proctoring, testStartedAt } = req.body;
 
     // Get the test to validate answers
     const test = await Test.findById(testId);
@@ -25,6 +60,15 @@ router.post('/', auth, async (req, res) => {
 
     if (existingSubmission) {
       return res.status(400).json({ message: 'Test already submitted' });
+    }
+
+    // Validate submission timing - use provided testStartedAt or current time as fallback
+    const studentTestStartTime = testStartedAt ? new Date(testStartedAt) : new Date();
+    
+    if (!canSubmitTest(test, studentTestStartTime)) {
+      return res.status(400).json({ 
+        message: 'Submission deadline has passed. The test is no longer accepting submissions.' 
+      });
     }
 
     // Calculate score
@@ -49,6 +93,7 @@ router.post('/', auth, async (req, res) => {
       score,
       totalQuestions: test.questions.length,
       timeSpent: timeSpent || 0,
+      testStartedAt: studentTestStartTime,
       proctoring: proctoring || {}
     });
 

@@ -10,16 +10,49 @@ const Test = require('./models/Test');
 
 app.use(cors({
   origin: [
+    // Local development
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
+    'http://localhost:3000',
+    'http://localhost:4173',
+    'http://localhost:4174',
+    'http://localhost:4175',
+    
+    // Production HTTPS domains
     'https://anuadmin.bah.in',
     'https://anuevaluator.bah.in',
-    'https://anustudent.bah.in'
+    'https://anustudent.bah.in',
+    
+    // Alternative HTTP variants (in case HTTPS is not fully configured)
+    'http://anuadmin.bah.in',
+    'http://anuevaluator.bah.in',
+    'http://anustudent.bah.in',
+    
+    // Admin subdomain variants
+    'https://admin.anuadmin.bah.in',
+    'https://student.anustudent.bah.in',
+    'https://evaluator.anuevaluator.bah.in',
+    
+    // Main domain variants
+    'https://admin.bah.in',
+    'https://student.bah.in',
+    'https://evaluator.bah.in'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'x-auth-token',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  exposedHeaders: ['x-auth-token'],
+  optionsSuccessStatus: 200 // For legacy browser support
 }));
 
 app.use(express.json());
@@ -30,11 +63,26 @@ app.use((req, res, next) => {
   next();
 });
 
+// Enhanced OPTIONS handler for CORS preflight requests
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token');
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
+    'http://localhost:3000', 'http://localhost:4173', 'http://localhost:4174', 'http://localhost:4175',
+    'https://anuadmin.bah.in', 'https://anuevaluator.bah.in', 'https://anustudent.bah.in',
+    'http://anuadmin.bah.in', 'http://anuevaluator.bah.in', 'http://anustudent.bah.in',
+    'https://admin.anuadmin.bah.in', 'https://student.anustudent.bah.in', 'https://evaluator.anuevaluator.bah.in',
+    'https://admin.bah.in', 'https://student.bah.in', 'https://evaluator.bah.in'
+  ];
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
   res.sendStatus(200);
 });
 

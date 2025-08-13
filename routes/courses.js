@@ -11,9 +11,28 @@ router.get('/', async (req, res) => {
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
     
+    console.log('Courses found:', courses.length);
+    console.log('Courses data:', courses);
+    
     res.json({ courses });
   } catch (error) {
     console.error('Error fetching courses:', error);
+    res.status(500).json({ message: 'Server error while fetching courses' });
+  }
+});
+
+// Test endpoint to get all courses without auth
+router.get('/test/all', async (req, res) => {
+  try {
+    const allCourses = await Course.find({});
+    console.log('All courses in database:', allCourses);
+    res.json({ 
+      message: 'All courses in database',
+      total: allCourses.length,
+      courses: allCourses 
+    });
+  } catch (error) {
+    console.error('Error fetching all courses:', error);
     res.status(500).json({ message: 'Server error while fetching courses' });
   }
 });

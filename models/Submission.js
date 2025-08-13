@@ -48,6 +48,11 @@ const submissionSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  // Track when student started the test (different from createdAt)
+  testStartedAt: {
+    type: Date,
+    default: Date.now
+  },
   proctoring: {
     fullscreenExits: {
       type: Number,
