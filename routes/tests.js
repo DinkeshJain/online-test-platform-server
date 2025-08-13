@@ -33,7 +33,7 @@ function shuffleArray(array) {
   return shuffled;
 }
 
-// Helper function to check if test is currently active based on time (for students)
+// Helper function to check if test is currently active and visible to students
 function isTestCurrentlyActive(test) {
   // First check if the test is marked as active
   if (!test.isActive) {
@@ -54,14 +54,41 @@ function isTestCurrentlyActive(test) {
     return test.isActive;
   }
   
+  // Test is visible if it's within the active period
+  // Students should see all active tests, not just during entry grace period
+  const isWithinActivePeriod = now >= activeFrom && now <= activeTo;
+  
+  return test.isActive && isWithinActivePeriod;
+}
+
+// Helper function to check if student can start a test (entry permission)
+function canStartTest(test) {
+  // First check if the test is marked as active
+  if (!test.isActive) {
+    return false;
+  }
+  
+  // If no time restrictions are set, just use the isActive flag
+  if (!test.activeFrom || !test.activeTo) {
+    return test.isActive;
+  }
+  
+  const now = new Date();
+  const activeFrom = new Date(test.activeFrom);
+  
+  // Check if dates are valid
+  if (isNaN(activeFrom.getTime())) {
+    return test.isActive;
+  }
+  
   // Allow entry during grace period (default 10 minutes after start)
   const entryGracePeriod = test.entryGracePeriod || 10; // minutes
   const entryDeadline = new Date(activeFrom.getTime() + (entryGracePeriod * 60 * 1000));
   
   // Check if current time is within the entry window
-  const canStartTest = now >= activeFrom && now <= entryDeadline;
+  const canStart = now >= activeFrom && now <= entryDeadline;
   
-  return test.isActive && canStartTest;
+  return test.isActive && canStart;
 }
 
 // Helper function to check if submission is allowed (for ongoing tests)
@@ -364,7 +391,7 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Test not found' });
     }
 
-    if (!isTestCurrentlyActive(test)) {
+    if (!canStartTest(test)) {
       // Provide detailed timing information for better error messages
       const now = new Date();
       const activeFrom = new Date(test.activeFrom);
