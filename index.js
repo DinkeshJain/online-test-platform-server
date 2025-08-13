@@ -14,10 +14,6 @@ app.use(cors({
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
-    'http://localhost:3000',
-    'http://localhost:4173',
-    'http://localhost:4174',
-    'http://localhost:4175',
     
     // Production HTTPS domains
     'https://anuadmin.bah.in',
@@ -28,16 +24,6 @@ app.use(cors({
     'http://anuadmin.bah.in',
     'http://anuevaluator.bah.in',
     'http://anustudent.bah.in',
-    
-    // Admin subdomain variants
-    'https://admin.anuadmin.bah.in',
-    'https://student.anustudent.bah.in',
-    'https://evaluator.anuevaluator.bah.in',
-    
-    // Main domain variants
-    'https://admin.bah.in',
-    'https://student.bah.in',
-    'https://evaluator.bah.in'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
