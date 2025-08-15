@@ -11,6 +11,10 @@ const subjectSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  hasExternalExam: {
+    type: Boolean,
+    default: true // Default to having external exam (traditional system)
   }
 }, { _id: true });
 

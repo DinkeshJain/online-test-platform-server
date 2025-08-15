@@ -7,6 +7,7 @@ const Student = require('../models/Student');
 const Test = require('../models/Test');
 const Submission = require('../models/Submission');
 const { adminAuth, evaluatorAuth, adminOrEvaluatorAuth } = require('../middleware/auth');
+const DataCleanupUtility = require('../utils/dataCleanup');
 
 const router = express.Router();
 
@@ -191,6 +192,10 @@ router.get('/assigned-data', evaluatorAuth, async (req, res) => {
       }).populate('studentId', 'enrollmentNo fullName')
         .populate('testId', 'title');
 
+      // Get hasExternalExam from course subjects
+      const courseSubject = course.subjects.find(s => s.subjectCode === subject.subjectCode);
+      const hasExternalExam = courseSubject ? courseSubject.hasExternalExam : true;
+
       assignedData.push({
         course: {
           _id: course._id,
@@ -199,7 +204,8 @@ router.get('/assigned-data', evaluatorAuth, async (req, res) => {
         },
         subject: {
           subjectCode: subject.subjectCode,
-          subjectName: subject.subjectName
+          subjectName: subject.subjectName,
+          hasExternalExam: hasExternalExam
         },
         students,
         tests,
@@ -413,6 +419,10 @@ router.get('/students/:courseId/:subjectCode', evaluatorAuth, async (req, res) =
       return res.status(404).json({ message: 'Subject not found' });
     }
 
+    // Get the actual subject details from the course to check hasExternalExam
+    const courseSubject = course.subjects.find(s => s.subjectCode === subjectCode);
+    const hasExternalExam = courseSubject ? courseSubject.hasExternalExam : true; // Default to true if not found
+
     // Get all students in this course
     const students = await Student.find({ course: course.courseCode }).select('fullName enrollmentNo emailId');
 
@@ -443,7 +453,8 @@ router.get('/students/:courseId/:subjectCode', evaluatorAuth, async (req, res) =
       },
       subject: {
         subjectCode: subject.subjectCode,
-        subjectName: subject.subjectName
+        subjectName: subject.subjectName,
+        hasExternalExam: hasExternalExam
       },
       students: studentsWithMarks
     });
@@ -656,10 +667,48 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Evaluator not found' });
     }
 
-    // Hard delete - completely remove from database
-    await Evaluator.findByIdAndDelete(req.params.id);
+    // Import required models for cascading deletion
+    const InternalMarks = require('../models/InternalMarks');
+    const mongoose = require('mongoose');
 
-    res.json({ message: 'Evaluator deleted successfully' });
+    // Start a transaction for data consistency
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Delete all internal marks records created by this evaluator
+      const deletedInternalMarks = await InternalMarks.deleteMany(
+        { evaluatorId: req.params.id },
+        { session }
+      );
+
+      // Hard delete - completely remove evaluator from database
+      const deletedEvaluator = await Evaluator.findByIdAndDelete(req.params.id, { session });
+
+      // Commit the transaction
+      await session.commitTransaction();
+
+      // Perform auto-cleanup to ensure data consistency
+      const autoCleanupSummary = await DataCleanupUtility.autoCleanupAfterDeletion();
+
+      res.json({
+        message: 'Evaluator and all associated data deleted successfully',
+        deletionSummary: {
+          evaluator: deletedEvaluator,
+          internalMarksDeleted: deletedInternalMarks.deletedCount
+        },
+        autoCleanup: autoCleanupSummary
+      });
+
+    } catch (transactionError) {
+      // Rollback transaction on error
+      await session.abortTransaction();
+      throw transactionError;
+    } finally {
+      // End session
+      session.endSession();
+    }
+
   } catch (error) {
     console.error('Error deleting evaluator:', error);
     res.status(500).json({ message: 'Server error while deleting evaluator' });

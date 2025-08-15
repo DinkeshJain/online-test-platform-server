@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const Test = require('../models/Test');
 const { auth, adminAuth } = require('../middleware/auth');
+const DataCleanupUtility = require('../utils/dataCleanup');
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ function isTestCurrentlyActive(test) {
   }
   
   // Test is visible if it's within the active period
-  // Students should see all active tests, not just during entry grace period
+  // Students should see all active tests during the active period
   const isWithinActivePeriod = now >= activeFrom && now <= activeTo;
   
   return test.isActive && isWithinActivePeriod;
@@ -81,12 +82,8 @@ function canStartTest(test) {
     return test.isActive;
   }
   
-  // Allow entry during grace period (default 10 minutes after start)
-  const entryGracePeriod = test.entryGracePeriod || 10; // minutes
-  const entryDeadline = new Date(activeFrom.getTime() + (entryGracePeriod * 60 * 1000));
-  
-  // Check if current time is within the entry window
-  const canStart = now >= activeFrom && now <= entryDeadline;
+  // Check if current time is after the active start time
+  const canStart = now >= activeFrom;
   
   return test.isActive && canStart;
 }
@@ -113,15 +110,14 @@ function canSubmitTest(test, testStartedAt) {
   }
   
   // Calculate maximum allowed submission time
-  const extensionPeriod = test.extensionPeriod || 10; // minutes
-  const submissionDeadline = new Date(activeTo.getTime() + (extensionPeriod * 60 * 1000));
+  const submissionDeadline = activeTo;
   
   // Also check if student has had enough time to complete the test
   const testDurationMs = test.duration * 60 * 1000; // test duration in milliseconds
   const studentTimeLimit = new Date(testStartTime.getTime() + testDurationMs);
   
   // Student can submit if:
-  // 1. It's before the extended deadline, AND
+  // 1. It's before the test end time, AND
   // 2. They haven't exceeded their individual time limit
   return now <= submissionDeadline && now <= studentTimeLimit;
 }
@@ -138,7 +134,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
       return res.status(400).json({ message: 'No Excel file uploaded' });
     }
 
-    const { duration, course, subject, activeFrom, activeTo, entryGracePeriod, extensionPeriod, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, subject, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     if (!duration) {
       return res.status(400).json({ message: 'Duration is required' });
@@ -217,7 +213,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
       return res.status(400).json({ message: 'activeFrom must be before activeTo' });
     }
 
-    // Generate title from subject
+    // Generate title from subject (handled by virtual field)
     const lastDigit = parsedSubject.subjectCode.slice(-1);
     const test = new Test({
       duration,
@@ -225,11 +221,10 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
       subject: parsedSubject,
       questions,
       createdBy: req.user._id,
-      isActive: true,
+      isActive: isActive !== undefined ? isActive : true,
+      showScoresToStudents: showScoresToStudents || false,
       activeFrom: parsedActiveFrom,
       activeTo: parsedActiveTo,
-      entryGracePeriod: entryGracePeriod ? parseInt(entryGracePeriod) : 10,
-      extensionPeriod: extensionPeriod ? parseInt(extensionPeriod) : 10,
       shuffleQuestions: shuffleQuestions !== undefined ? shuffleQuestions : true,
       shuffleOptions: shuffleOptions !== undefined ? shuffleOptions : true,
       testType: testType || 'official'
@@ -261,7 +256,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
 // Create a new test (Admin only)
 router.post('/', adminAuth, async (req, res) => {
   try {
-    const { duration, course, subject, questions, showScoresToStudents, activeFrom, activeTo, entryGracePeriod, extensionPeriod, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     // Validate required fields
     if (!duration || !course || !subject) {
@@ -272,9 +267,9 @@ router.post('/', adminAuth, async (req, res) => {
       return res.status(400).json({ message: 'Subject must have both code and name' });
     }
 
-    // Generate title from subject
+    // Generate title from subject (this will be handled by virtual field)
     const lastDigit = subject.subjectCode.slice(-1);
-    const title = `${subject.subjectName} (Paper ${lastDigit})`;
+    // Note: title is handled by virtual field displayTitle in the model
 
     // Parse dates if provided
     let parsedActiveFrom = null;
@@ -299,18 +294,15 @@ router.post('/', adminAuth, async (req, res) => {
     }
 
     const test = new Test({
-      title,
       duration,
       course,
       subject,
       questions,
       createdBy: req.user._id,
-      isActive: true, // Tests are active by default when created
+      isActive: isActive !== undefined ? isActive : true,
       showScoresToStudents: showScoresToStudents || false,
       activeFrom: parsedActiveFrom,
       activeTo: parsedActiveTo,
-      entryGracePeriod: entryGracePeriod || 10,
-      extensionPeriod: extensionPeriod || 10,
       shuffleQuestions: shuffleQuestions !== undefined ? shuffleQuestions : true,
       shuffleOptions: shuffleOptions !== undefined ? shuffleOptions : true,
       testType: testType || 'official'
@@ -395,14 +387,12 @@ router.get('/:id', auth, async (req, res) => {
       // Provide detailed timing information for better error messages
       const now = new Date();
       const activeFrom = new Date(test.activeFrom);
-      const entryGracePeriod = test.entryGracePeriod || 10;
-      const entryDeadline = new Date(activeFrom.getTime() + (entryGracePeriod * 60 * 1000));
       
       let errorMessage = 'Test is not currently active';
       if (now < activeFrom) {
         errorMessage = `Test will be available from ${activeFrom.toLocaleString()}`;
-      } else if (now > entryDeadline) {
-        errorMessage = `Test entry period ended at ${entryDeadline.toLocaleString()}. You can no longer start this test.`;
+      } else {
+        errorMessage = `Test is no longer available for new attempts.`;
       }
       
       return res.status(400).json({ message: errorMessage });
@@ -457,20 +447,13 @@ router.get('/:id', auth, async (req, res) => {
     const now = new Date();
     const activeFrom = new Date(test.activeFrom);
     const activeTo = new Date(test.activeTo);
-    const entryGracePeriod = test.entryGracePeriod || 10;
-    const extensionPeriod = test.extensionPeriod || 10;
-    const entryDeadline = new Date(activeFrom.getTime() + (entryGracePeriod * 60 * 1000));
-    const submissionDeadline = new Date(activeTo.getTime() + (extensionPeriod * 60 * 1000));
 
     const testForUser = {
       ...test.toObject(),
       questions,
       timing: {
         testStartedAt: now, // When student accessed the test
-        entryDeadline: entryDeadline,
-        submissionDeadline: submissionDeadline,
-        entryGracePeriod: entryGracePeriod,
-        extensionPeriod: extensionPeriod
+        submissionDeadline: activeTo
       }
     };
 
@@ -506,7 +489,7 @@ router.get('/:id/edit', adminAuth, async (req, res) => {
 // Update test (Admin only)
 router.put('/:id', adminAuth, async (req, res) => {
   try {
-    const { duration, course, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, entryGracePeriod, extensionPeriod, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     // Validate required fields
     if (course !== undefined && !course) {
@@ -557,8 +540,6 @@ router.put('/:id', adminAuth, async (req, res) => {
     test.showScoresToStudents = showScoresToStudents !== undefined ? showScoresToStudents : test.showScoresToStudents;
     test.activeFrom = parsedActiveFrom !== null ? parsedActiveFrom : test.activeFrom;
     test.activeTo = parsedActiveTo !== null ? parsedActiveTo : test.activeTo;
-    test.entryGracePeriod = entryGracePeriod !== undefined ? entryGracePeriod : test.entryGracePeriod;
-    test.extensionPeriod = extensionPeriod !== undefined ? extensionPeriod : test.extensionPeriod;
     test.shuffleQuestions = shuffleQuestions !== undefined ? shuffleQuestions : test.shuffleQuestions;
     test.shuffleOptions = shuffleOptions !== undefined ? shuffleOptions : test.shuffleOptions;
     test.testType = testType !== undefined ? testType : test.testType;
@@ -616,8 +597,56 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Test not found' });
     }
 
-    await Test.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Test deleted successfully' });
+    // Import required models for cascading deletion
+    const Submission = require('../models/Submission');
+    const InternalMarks = require('../models/InternalMarks');
+    const mongoose = require('mongoose');
+
+    // Start a transaction for data consistency
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Delete all submissions associated with this test
+      const deletedSubmissions = await Submission.deleteMany(
+        { testId: req.params.id },
+        { session }
+      );
+
+      // Delete all internal marks associated with this test
+      const deletedInternalMarks = await InternalMarks.deleteMany(
+        { testId: req.params.id },
+        { session }
+      );
+
+      // Finally delete the test
+      const deletedTest = await Test.findByIdAndDelete(req.params.id, { session });
+
+      // Commit the transaction
+      await session.commitTransaction();
+
+      // Perform auto-cleanup to ensure data consistency
+      const autoCleanupSummary = await DataCleanupUtility.autoCleanupAfterDeletion();
+
+      res.json({
+        message: 'Test and all associated data deleted successfully',
+        deletionSummary: {
+          test: deletedTest,
+          submissionsDeleted: deletedSubmissions.deletedCount,
+          internalMarksDeleted: deletedInternalMarks.deletedCount
+        },
+        autoCleanup: autoCleanupSummary
+      });
+
+    } catch (transactionError) {
+      // Rollback transaction on error
+      await session.abortTransaction();
+      throw transactionError;
+    } finally {
+      // End session
+      session.endSession();
+    }
+
   } catch (error) {
     console.error('Delete test error:', error);
     res.status(500).json({ message: 'Server error while deleting test' });

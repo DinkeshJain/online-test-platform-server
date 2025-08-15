@@ -5,7 +5,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "cleanup:check": "node scripts/cleanup-data.js --check",
+    "cleanup:dry": "node scripts/cleanup-data.js --cleanup-dry",
+    "cleanup:execute": "node scripts/cleanup-data.js --cleanup"
   },
   "keywords": [],
   "author": "",

@@ -80,6 +80,8 @@ app.use('/api/submissions', require('./routes/submissions'));
 app.use('/api/bulk', require('./routes/bulkUpload'));
 app.use('/api/courses', require('./routes/courses'));
 app.use('/api/evaluators', require('./routes/evaluators'));
+app.use('/api/maintenance', require('./routes/maintenance'));
+app.use('/api/maintenance', require('./routes/maintenance'));
 
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/online-test-app')
   .then(() => {

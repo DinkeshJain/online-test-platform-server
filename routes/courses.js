@@ -1,6 +1,25 @@
+// Make results private for a course (undo release)
+router.post('/:courseId/make-results-private', adminAuth, async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const Course = require('../models/Course');
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    course.resultsReleased = false;
+    course.resultsReleasedAt = null;
+    await course.save();
+    res.json({ message: 'Results have been made private for this course.' });
+  } catch (error) {
+    console.error('Error making results private:', error);
+    res.status(500).json({ message: 'Failed to make results private.' });
+  }
+});
 const express = require('express');
 const Course = require('../models/Course');
 const { adminAuth } = require('../middleware/auth');
+const DataCleanupUtility = require('../utils/dataCleanup');
 
 const router = express.Router();
 
@@ -88,6 +107,10 @@ router.post('/', adminAuth, async (req, res) => {
             message: 'All subjects must have both subject code and subject name' 
           });
         }
+        // Set default hasExternalExam if not provided
+        if (subject.hasExternalExam === undefined) {
+          subject.hasExternalExam = true;
+        }
       }
 
       // Check for duplicate subject codes within the course
@@ -158,6 +181,10 @@ router.put('/:id', adminAuth, async (req, res) => {
             message: 'All subjects must have both subject code and subject name' 
           });
         }
+        // Ensure hasExternalExam is properly set (default to true if not specified)
+        if (subject.hasExternalExam === undefined) {
+          subject.hasExternalExam = true;
+        }
       }
 
       // Check for duplicate subject codes within the course
@@ -190,7 +217,7 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-// Delete course (soft delete)
+// Delete course (soft delete with cascading)
 router.delete('/:id', adminAuth, async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
@@ -198,10 +225,78 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    course.isActive = false;
-    await course.save();
+    // Import required models for cascading deletion
+    const Test = require('../models/Test');
+    const Submission = require('../models/Submission');
+    const InternalMarks = require('../models/InternalMarks');
+    const Student = require('../models/Student');
+    const mongoose = require('mongoose');
 
-    res.json({ message: 'Course deleted successfully' });
+    // Start a transaction for data consistency
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Get all tests for this course to delete their related data
+      const courseTests = await Test.find({ course: req.params.id }, null, { session });
+      const testIds = courseTests.map(test => test._id);
+
+      // Delete all submissions for tests in this course
+      const deletedSubmissions = await Submission.deleteMany(
+        { testId: { $in: testIds } },
+        { session }
+      );
+
+      // Delete all internal marks for this course
+      const deletedInternalMarks = await InternalMarks.deleteMany(
+        { courseId: req.params.id },
+        { session }
+      );
+
+      // Delete all tests for this course
+      const deletedTests = await Test.deleteMany(
+        { course: req.params.id },
+        { session }
+      );
+
+      // Soft delete students in this course (deactivate them)
+      const deactivatedStudents = await Student.updateMany(
+        { course: req.params.id },
+        { isActive: false },
+        { session }
+      );
+
+      // Soft delete the course
+      course.isActive = false;
+      await course.save({ session });
+
+      // Commit the transaction
+      await session.commitTransaction();
+
+      // Perform auto-cleanup to ensure data consistency
+      const autoCleanupSummary = await DataCleanupUtility.autoCleanupAfterDeletion();
+
+      res.json({
+        message: 'Course and all associated data deleted successfully',
+        deletionSummary: {
+          course: course,
+          submissionsDeleted: deletedSubmissions.deletedCount,
+          internalMarksDeleted: deletedInternalMarks.deletedCount,
+          testsDeleted: deletedTests.deletedCount,
+          studentsDeactivated: deactivatedStudents.modifiedCount
+        },
+        autoCleanup: autoCleanupSummary
+      });
+
+    } catch (transactionError) {
+      // Rollback transaction on error
+      await session.abortTransaction();
+      throw transactionError;
+    } finally {
+      // End session
+      session.endSession();
+    }
+
   } catch (error) {
     console.error('Error deleting course:', error);
     res.status(500).json({ message: 'Server error while deleting course' });
@@ -254,7 +349,7 @@ router.post('/:id/subjects', adminAuth, async (req, res) => {
   }
 });
 
-// Remove subject from course
+// Remove subject from course (with cascading deletion)
 router.delete('/:id/subjects/:subjectId', adminAuth, async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
@@ -262,17 +357,92 @@ router.delete('/:id/subjects/:subjectId', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    course.subjects = course.subjects.filter(
-      subject => subject._id.toString() !== req.params.subjectId
+    // Find the subject being deleted
+    const subjectToDelete = course.subjects.find(
+      subject => subject._id.toString() === req.params.subjectId
     );
 
-    await course.save();
-    await course.populate('createdBy', 'name');
+    if (!subjectToDelete) {
+      return res.status(404).json({ message: 'Subject not found in course' });
+    }
 
-    res.json({
-      message: 'Subject removed successfully',
-      course
-    });
+    // Import required models for cascading deletion
+    const Test = require('../models/Test');
+    const Submission = require('../models/Submission');
+    const InternalMarks = require('../models/InternalMarks');
+    const mongoose = require('mongoose');
+
+    // Start a transaction for data consistency
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Get all tests for this subject to delete their related data
+      const subjectTests = await Test.find({ 
+        course: req.params.id,
+        'subject.subjectCode': subjectToDelete.subjectCode 
+      }, null, { session });
+      const testIds = subjectTests.map(test => test._id);
+
+      // Delete all submissions for tests in this subject
+      const deletedSubmissions = await Submission.deleteMany(
+        { testId: { $in: testIds } },
+        { session }
+      );
+
+      // Delete all internal marks for this subject
+      const deletedInternalMarks = await InternalMarks.deleteMany(
+        { 
+          courseId: req.params.id,
+          subjectCode: subjectToDelete.subjectCode
+        },
+        { session }
+      );
+
+      // Delete all tests for this subject
+      const deletedTests = await Test.deleteMany(
+        { 
+          course: req.params.id,
+          'subject.subjectCode': subjectToDelete.subjectCode 
+        },
+        { session }
+      );
+
+      // Remove subject from course
+      course.subjects = course.subjects.filter(
+        subject => subject._id.toString() !== req.params.subjectId
+      );
+
+      await course.save({ session });
+      await course.populate('createdBy', 'name');
+
+      // Commit the transaction
+      await session.commitTransaction();
+
+      // Perform auto-cleanup to ensure data consistency
+      const autoCleanupSummary = await DataCleanupUtility.autoCleanupAfterDeletion();
+
+      res.json({
+        message: 'Subject and all associated data removed successfully',
+        course,
+        deletionSummary: {
+          subject: subjectToDelete,
+          submissionsDeleted: deletedSubmissions.deletedCount,
+          internalMarksDeleted: deletedInternalMarks.deletedCount,
+          testsDeleted: deletedTests.deletedCount
+        },
+        autoCleanup: autoCleanupSummary
+      });
+
+    } catch (transactionError) {
+      // Rollback transaction on error
+      await session.abortTransaction();
+      throw transactionError;
+    } finally {
+      // End session
+      session.endSession();
+    }
+
   } catch (error) {
     console.error('Error removing subject:', error);
     res.status(500).json({ message: 'Server error while removing subject' });

@@ -28,15 +28,14 @@ function canSubmitTest(test, testStartedAt) {
   }
   
   // Calculate maximum allowed submission time
-  const extensionPeriod = test.extensionPeriod || 10; // minutes
-  const submissionDeadline = new Date(activeTo.getTime() + (extensionPeriod * 60 * 1000));
+  const submissionDeadline = activeTo;
   
   // Also check if student has had enough time to complete the test
   const testDurationMs = test.duration * 60 * 1000; // test duration in milliseconds
   const studentTimeLimit = new Date(testStartTime.getTime() + testDurationMs);
   
   // Student can submit if:
-  // 1. It's before the extended deadline, AND
+  // 1. It's before the test end time, AND
   // 2. They haven't exceeded their individual time limit
   return now <= submissionDeadline && now <= studentTimeLimit;
 }
@@ -422,7 +421,8 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
               fullName: student.fullName,
               enrollmentNo: student.enrollmentNo,
               emailId: student.emailId,
-              course: student.course
+              course: student.course,
+              fatherName: student.fatherName
             },
             testResults: testResults
           });

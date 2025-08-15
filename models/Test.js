@@ -68,16 +68,6 @@ const testSchema = new mongoose.Schema({
     enum: ['demo', 'official'],
     default: 'official',
     required: true
-  },
-  // Grace period in minutes for late entry (default 10 minutes)
-  entryGracePeriod: {
-    type: Number,
-    default: 10
-  },
-  // Extension period in minutes for test completion (default 10 minutes)
-  extensionPeriod: {
-    type: Number,
-    default: 10
   }
 }, {
   timestamps: true

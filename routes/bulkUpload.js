@@ -6,6 +6,7 @@ const fs = require('fs');
 const mongoose = require('mongoose');
 const Student = require('../models/Student');
 const { adminAuth } = require('../middleware/auth');
+const DataCleanupUtility = require('../utils/dataCleanup');
 
 const router = express.Router();
 
@@ -750,10 +751,8 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
       // Commit the transaction
       await session.commitTransaction();
 
-      console.log(`Cascading deletion completed for student ${student.enrollmentNo}:`);
-      console.log(`- Deleted ${deletedSubmissions.deletedCount} submissions`);
-      console.log(`- Deleted ${deletedInternalMarks.deletedCount} internal marks records`);
-      console.log(`- Deleted student record`);
+      // Perform auto-cleanup to ensure data consistency
+      const autoCleanupSummary = await DataCleanupUtility.autoCleanupAfterDeletion();
 
       res.json({
         success: true,
@@ -762,7 +761,8 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
           student: deletedStudent,
           submissionsDeleted: deletedSubmissions.deletedCount,
           internalMarksDeleted: deletedInternalMarks.deletedCount
-        }
+        },
+        autoCleanup: autoCleanupSummary
       });
 
     } catch (transactionError) {
