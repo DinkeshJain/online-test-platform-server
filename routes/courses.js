@@ -1,8 +1,15 @@
+
+const express = require('express');
+const Course = require('../models/Course');
+const { adminAuth } = require('../middleware/auth');
+const DataCleanupUtility = require('../utils/dataCleanup');
+
+const router = express.Router();
+
 // Make results private for a course (undo release)
 router.post('/:courseId/make-results-private', adminAuth, async (req, res) => {
   try {
     const { courseId } = req.params;
-    const Course = require('../models/Course');
     const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({ message: 'Course not found' });
@@ -16,12 +23,6 @@ router.post('/:courseId/make-results-private', adminAuth, async (req, res) => {
     res.status(500).json({ message: 'Failed to make results private.' });
   }
 });
-const express = require('express');
-const Course = require('../models/Course');
-const { adminAuth } = require('../middleware/auth');
-const DataCleanupUtility = require('../utils/dataCleanup');
-
-const router = express.Router();
 
 // Get all courses
 router.get('/', async (req, res) => {
