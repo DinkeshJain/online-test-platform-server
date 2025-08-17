@@ -409,13 +409,27 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(400).json({ message: 'You have already submitted this test' });
     }
 
-    // Prepare questions with shuffling if enabled
-    let questions = test.questions.map(q => ({
+    // Prepare questions with dynamic allocation based on question count
+    let allQuestions = test.questions.map(q => ({
       _id: q._id,
       question: q.question,
       options: test.shuffleOptions ? shuffleArray(q.options) : q.options,
       originalCorrectAnswer: q.correctAnswer
     }));
+
+    // Dynamic question allocation logic
+    let questions;
+    let maxMarks;
+    
+    if (allQuestions.length >= 70) {
+      // If 70 or more questions, randomly select 70 questions
+      questions = shuffleArray(allQuestions).slice(0, 70);
+      maxMarks = 70;
+    } else {
+      // If less than 70 questions, use all questions
+      questions = allQuestions;
+      maxMarks = allQuestions.length;
+    }
 
     // Update correct answer index if options were shuffled
     if (test.shuffleOptions) {
@@ -438,7 +452,7 @@ router.get('/:id', auth, async (req, res) => {
       }));
     }
 
-    // Shuffle questions if enabled
+    // Shuffle questions if enabled (after selection)
     if (test.shuffleQuestions) {
       questions = shuffleArray(questions);
     }
@@ -451,6 +465,7 @@ router.get('/:id', auth, async (req, res) => {
     const testForUser = {
       ...test.toObject(),
       questions,
+      maxMarks, // Add max marks information for frontend
       timing: {
         testStartedAt: now, // When student accessed the test
         submissionDeadline: activeTo

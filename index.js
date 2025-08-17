@@ -44,11 +44,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
 // Enhanced OPTIONS handler for CORS preflight requests
 app.options('*', (req, res) => {
   const origin = req.headers.origin;
@@ -81,7 +76,8 @@ app.use('/api/bulk', require('./routes/bulkUpload'));
 app.use('/api/courses', require('./routes/courses'));
 app.use('/api/evaluators', require('./routes/evaluators'));
 app.use('/api/maintenance', require('./routes/maintenance'));
-app.use('/api/maintenance', require('./routes/maintenance'));
+app.use('/api/exam-progress', require('./routes/examProgress'));
+app.use('/api/results', require('./routes/results'));
 
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/online-test-app')
   .then(() => {

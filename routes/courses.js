@@ -30,10 +30,10 @@ router.get('/', async (req, res) => {
     const courses = await Course.find({ isActive: { $ne: false } })
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
-    
+
     console.log('Courses found:', courses.length);
     console.log('Courses data:', courses);
-    
+
     res.json({ courses });
   } catch (error) {
     console.error('Error fetching courses:', error);
@@ -46,10 +46,10 @@ router.get('/test/all', async (req, res) => {
   try {
     const allCourses = await Course.find({});
     console.log('All courses in database:', allCourses);
-    res.json({ 
+    res.json({
       message: 'All courses in database',
       total: allCourses.length,
-      courses: allCourses 
+      courses: allCourses
     });
   } catch (error) {
     console.error('Error fetching all courses:', error);
@@ -62,11 +62,11 @@ router.get('/:id', async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
       .populate('createdBy', 'name');
-    
+
     if (!course) {
       return res.status(404).json({ message: 'Course not found' });
     }
-    
+
     res.json({ course });
   } catch (error) {
     console.error('Error fetching course:', error);
@@ -81,8 +81,8 @@ router.post('/', adminAuth, async (req, res) => {
 
     // Validate required fields
     if (!courseName || !courseCode || !duration) {
-      return res.status(400).json({ 
-        message: 'Course name, course code, and duration are required' 
+      return res.status(400).json({
+        message: 'Course name, course code, and duration are required'
       });
     }
 
@@ -95,8 +95,8 @@ router.post('/', adminAuth, async (req, res) => {
     });
 
     if (existingCourse) {
-      return res.status(400).json({ 
-        message: 'Course with this name or code already exists' 
+      return res.status(400).json({
+        message: 'Course with this name or code already exists'
       });
     }
 
@@ -104,8 +104,8 @@ router.post('/', adminAuth, async (req, res) => {
     if (subjects && subjects.length > 0) {
       for (const subject of subjects) {
         if (!subject.subjectCode || !subject.subjectName) {
-          return res.status(400).json({ 
-            message: 'All subjects must have both subject code and subject name' 
+          return res.status(400).json({
+            message: 'All subjects must have both subject code and subject name'
           });
         }
         // Set default hasExternalExam if not provided
@@ -118,8 +118,8 @@ router.post('/', adminAuth, async (req, res) => {
       const subjectCodes = subjects.map(s => s.subjectCode.toUpperCase());
       const uniqueSubjectCodes = [...new Set(subjectCodes)];
       if (subjectCodes.length !== uniqueSubjectCodes.length) {
-        return res.status(400).json({ 
-          message: 'Duplicate subject codes are not allowed within a course' 
+        return res.status(400).json({
+          message: 'Duplicate subject codes are not allowed within a course'
         });
       }
     }
@@ -168,8 +168,8 @@ router.put('/:id', adminAuth, async (req, res) => {
       });
 
       if (existingCourse) {
-        return res.status(400).json({ 
-          message: 'Course with this name or code already exists' 
+        return res.status(400).json({
+          message: 'Course with this name or code already exists'
         });
       }
     }
@@ -178,8 +178,8 @@ router.put('/:id', adminAuth, async (req, res) => {
     if (subjects && subjects.length > 0) {
       for (const subject of subjects) {
         if (!subject.subjectCode || !subject.subjectName) {
-          return res.status(400).json({ 
-            message: 'All subjects must have both subject code and subject name' 
+          return res.status(400).json({
+            message: 'All subjects must have both subject code and subject name'
           });
         }
         // Ensure hasExternalExam is properly set (default to true if not specified)
@@ -192,8 +192,8 @@ router.put('/:id', adminAuth, async (req, res) => {
       const subjectCodes = subjects.map(s => s.subjectCode.toUpperCase());
       const uniqueSubjectCodes = [...new Set(subjectCodes)];
       if (subjectCodes.length !== uniqueSubjectCodes.length) {
-        return res.status(400).json({ 
-          message: 'Duplicate subject codes are not allowed within a course' 
+        return res.status(400).json({
+          message: 'Duplicate subject codes are not allowed within a course'
         });
       }
     }
@@ -310,8 +310,8 @@ router.post('/:id/subjects', adminAuth, async (req, res) => {
     const { subjectCode, subjectName } = req.body;
 
     if (!subjectCode || !subjectName) {
-      return res.status(400).json({ 
-        message: 'Subject code and subject name are required' 
+      return res.status(400).json({
+        message: 'Subject code and subject name are required'
       });
     }
 
@@ -326,8 +326,8 @@ router.post('/:id/subjects', adminAuth, async (req, res) => {
     );
 
     if (existingSubject) {
-      return res.status(400).json({ 
-        message: 'Subject with this code already exists in the course' 
+      return res.status(400).json({
+        message: 'Subject with this code already exists in the course'
       });
     }
 
@@ -379,9 +379,9 @@ router.delete('/:id/subjects/:subjectId', adminAuth, async (req, res) => {
 
     try {
       // Get all tests for this subject to delete their related data
-      const subjectTests = await Test.find({ 
+      const subjectTests = await Test.find({
         course: req.params.id,
-        'subject.subjectCode': subjectToDelete.subjectCode 
+        'subject.subjectCode': subjectToDelete.subjectCode
       }, null, { session });
       const testIds = subjectTests.map(test => test._id);
 
@@ -393,7 +393,7 @@ router.delete('/:id/subjects/:subjectId', adminAuth, async (req, res) => {
 
       // Delete all internal marks for this subject
       const deletedInternalMarks = await InternalMarks.deleteMany(
-        { 
+        {
           courseId: req.params.id,
           subjectCode: subjectToDelete.subjectCode
         },
@@ -402,9 +402,9 @@ router.delete('/:id/subjects/:subjectId', adminAuth, async (req, res) => {
 
       // Delete all tests for this subject
       const deletedTests = await Test.deleteMany(
-        { 
+        {
           course: req.params.id,
-          'subject.subjectCode': subjectToDelete.subjectCode 
+          'subject.subjectCode': subjectToDelete.subjectCode
         },
         { session }
       );
