@@ -345,5 +345,91 @@ router.get('/student/:studentId', async (req, res) => {
   }
 });
 
+// NEW: Get submission details with original question numbers for Reports
+router.get('/submission-details/:submissionId', async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+
+    const submission = await Submission.findById(submissionId)
+      .populate('testId', 'title questions')
+      .populate('userId', 'fullName enrollmentNo');
+
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found' });
+    }
+
+    // Format the response with original question numbers
+    const formattedSubmission = {
+      _id: submission._id,
+      student: {
+        name: submission.userId.fullName,
+        enrollmentNo: submission.userId.enrollmentNo
+      },
+      test: {
+        title: submission.testId.title,
+        totalQuestions: submission.testId.questions.length
+      },
+      answers: submission.answers.map(answer => ({
+        questionId: answer.questionId,
+        selectedAnswer: answer.selectedAnswer,
+        isCorrect: answer.isCorrect,
+        originalQuestionNumber: answer.originalQuestionNumber,
+        shuffledPosition: answer.shuffledPosition
+      })),
+      score: submission.score,
+      submittedAt: submission.submittedAt
+    };
+
+    res.json({ submission: formattedSubmission });
+
+  } catch (error) {
+    console.error('Error fetching submission details:', error);
+    res.status(500).json({ message: 'Server error while fetching submission details' });
+  }
+});
+
+// NEW: Update marks for specific questions based on original question numbers
+router.put('/update-question-marks/:submissionId', async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { questionMarks } = req.body; // Array of { originalQuestionNumber, marks }
+
+    const submission = await Submission.findById(submissionId);
+
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found' });
+    }
+
+    // Update marks for specific questions based on original question numbers
+    let updatedScore = 0;
+    questionMarks.forEach(update => {
+      const answerIndex = submission.answers.findIndex(
+        ans => ans.originalQuestionNumber === update.originalQuestionNumber
+      );
+      if (answerIndex !== -1) {
+        // Update the isCorrect field based on marks (assuming 1 mark = correct, 0 = incorrect)
+        submission.answers[answerIndex].isCorrect = update.marks > 0;
+        if (update.marks > 0) {
+          updatedScore++;
+        }
+      }
+    });
+
+
+    submission.score = updatedScore;
+    await submission.save();
+
+    res.json({
+      message: 'Marks updated successfully',
+      updatedScore,
+      submissionId: submission._id
+    });
+
+  } catch (error) {
+    console.error('Error updating question marks:', error);
+    res.status(500).json({ message: 'Server error while updating marks' });
+  }
+});
+
 module.exports = router;
 

@@ -19,11 +19,6 @@ app.use(cors({
     'https://anuadmin.bah.in',
     'https://anuevaluator.bah.in',
     'https://anustudent.bah.in',
-    
-    // Alternative HTTP variants (in case HTTPS is not fully configured)
-    'http://anuadmin.bah.in',
-    'http://anuevaluator.bah.in',
-    'http://anustudent.bah.in',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -49,11 +44,7 @@ app.options('*', (req, res) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
     'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
-    'http://localhost:3000', 'http://localhost:4173', 'http://localhost:4174', 'http://localhost:4175',
     'https://anuadmin.bah.in', 'https://anuevaluator.bah.in', 'https://anustudent.bah.in',
-    'http://anuadmin.bah.in', 'http://anuevaluator.bah.in', 'http://anustudent.bah.in',
-    'https://admin.anuadmin.bah.in', 'https://student.anustudent.bah.in', 'https://evaluator.anuevaluator.bah.in',
-    'https://admin.bah.in', 'https://student.bah.in', 'https://evaluator.bah.in'
   ];
   
   if (allowedOrigins.includes(origin)) {

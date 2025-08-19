@@ -72,17 +72,34 @@ router.post('/', auth, async (req, res) => {
 
     // Calculate score
     let score = 0;
-    const processedAnswers = answers.map(answer => {
+    const processedAnswers = answers.map((answer, index) => {
       const question = test.questions.id(answer.questionId);
-      const isCorrect = question && question.correctAnswer === answer.selectedAnswer;
+
+      // NEW: Use shuffled to original mapping for correct answer checking
+      let isCorrect = false;
+      if (question && answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal)) {
+        const selectedOriginalIndex = answer.shuffledToOriginal[answer.selectedAnswer];
+        isCorrect = selectedOriginalIndex === question.correctAnswer;
+      } else {
+        // Fallback to old method if mapping not available
+        isCorrect = question && question.correctAnswer === answer.selectedAnswer;
+      }
+
       if (isCorrect) score++;
 
       return {
         questionId: answer.questionId,
         selectedAnswer: answer.selectedAnswer,
-        isCorrect
+        isCorrect,
+        // Store original question number and shuffled position
+        originalQuestionNumber: answer.originalQuestionNumber || (index + 1),
+        shuffledPosition: index + 1,
+        // NEW: Store shuffled to original mapping
+        shuffledToOriginal: answer.shuffledToOriginal || []
       };
     });
+
+
 
     // Create submission
     const submission = new Submission({

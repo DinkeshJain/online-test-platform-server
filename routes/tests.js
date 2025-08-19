@@ -417,45 +417,56 @@ router.get('/:id', auth, async (req, res) => {
       originalCorrectAnswer: q.correctAnswer
     }));
 
-    // Dynamic question allocation logic
-    let questions;
-    let maxMarks;
+    // Dynamic question allocation logic - SHUFFLE ALL QUESTIONS FIRST
+let shuffledAllQuestions = shuffleArray(allQuestions);
+let questions;
+let maxMarks;
 
-    if (allQuestions.length >= 70) {
-      // If 70 or more questions, randomly select 70 questions
-      questions = shuffleArray(allQuestions).slice(0, 70);
-      maxMarks = 70;
-    } else {
-      // If less than 70 questions, use all questions
-      questions = allQuestions;
-      maxMarks = allQuestions.length;
-    }
+if (shuffledAllQuestions.length >= 70) {
+  // Take first 70 from ALL shuffled questions (not just first 70)
+  questions = shuffledAllQuestions.slice(0, 70);
+  maxMarks = 70;
+} else {
+  // If less than 70 questions, use all questions
+  questions = shuffledAllQuestions;
+  maxMarks = shuffledAllQuestions.length;
+}
 
-    // Update correct answer index if options were shuffled
-    if (test.shuffleOptions) {
-      questions = questions.map(q => {
-        const originalCorrectOption = test.questions.find(orig => orig._id.equals(q._id)).options[q.originalCorrectAnswer];
-        const newCorrectIndex = q.options.indexOf(originalCorrectOption);
-        return {
-          _id: q._id,
-          question: q.question,
-          options: q.options
-          // Don't include correct answer in response for security
-        };
-      });
-    } else {
-      questions = questions.map(q => ({
+
+    // Find the original index of each question in the full test.questions array
+    questions = questions.map((q, questionIndex) => {
+      // Find the original position in the test.questions array
+      const originalIndex = test.questions.findIndex(original => original._id.equals(q._id));
+      const originalQuestionNumber = originalIndex + 1; // index + 1
+
+      let shuffledToOriginal = [];
+      let finalOptions = q.options;
+
+      if (test.shuffleOptions) {
+        const originalOptions = test.questions[originalIndex].options;
+        shuffledToOriginal = q.options.map(option => originalOptions.indexOf(option));
+        finalOptions = q.options;
+      } else {
+        shuffledToOriginal = q.options.map((_, index) => index);
+        finalOptions = q.options;
+      }
+
+      return {
         _id: q._id,
         question: q.question,
-        options: q.options
-        // Don't include correct answer in response for security
-      }));
-    }
+        options: finalOptions,
+        shuffledToOriginal: shuffledToOriginal,
+        originalQuestionNumber: originalQuestionNumber // CORRECT: based on DB position
+      };
+    });
 
-    // Shuffle questions if enabled (after selection)
+
+    // If questions are shuffled AFTER adding originalQuestionNumber,
+    // the originalQuestionNumber will still track the pre-shuffle order
     if (test.shuffleQuestions) {
       questions = shuffleArray(questions);
     }
+
 
     // Calculate timing information
     const now = new Date();

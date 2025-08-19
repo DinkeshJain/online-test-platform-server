@@ -13,6 +13,20 @@ const answerSchema = new mongoose.Schema({
   isCorrect: {
     type: Boolean,
     default: false
+  },
+  // NEW: Add original question number and shuffled position
+  originalQuestionNumber: {
+    type: Number,
+    required: true
+  },
+  shuffledPosition: {
+    type: Number,
+    required: true
+  },
+  // NEW: Add shuffled to original mapping
+  shuffledToOriginal: {
+    type: [Number],
+    required: true
   }
 });
 
