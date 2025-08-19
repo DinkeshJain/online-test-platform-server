@@ -12,28 +12,28 @@ function canSubmitTest(test, testStartedAt) {
   if (!test.isActive) {
     return false;
   }
-  
+
   // If no time restrictions are set, just use the isActive flag
   if (!test.activeFrom || !test.activeTo) {
     return test.isActive;
   }
-  
+
   const now = new Date();
   const activeTo = new Date(test.activeTo);
   const testStartTime = new Date(testStartedAt);
-  
+
   // Check if dates are valid
   if (isNaN(activeTo.getTime()) || isNaN(testStartTime.getTime())) {
     return test.isActive;
   }
-  
+
   // Calculate maximum allowed submission time
   const submissionDeadline = activeTo;
-  
+
   // Also check if student has had enough time to complete the test
   const testDurationMs = test.duration * 60 * 1000; // test duration in milliseconds
   const studentTimeLimit = new Date(testStartTime.getTime() + testDurationMs);
-  
+
   // Student can submit if:
   // 1. It's before the test end time, AND
   // 2. They haven't exceeded their individual time limit
@@ -63,10 +63,10 @@ router.post('/', auth, async (req, res) => {
 
     // Validate submission timing - use provided testStartedAt or current time as fallback
     const studentTestStartTime = testStartedAt ? new Date(testStartedAt) : new Date();
-    
+
     if (!canSubmitTest(test, studentTestStartTime)) {
-      return res.status(400).json({ 
-        message: 'Submission deadline has passed. The test is no longer accepting submissions.' 
+      return res.status(400).json({
+        message: 'Submission deadline has passed. The test is no longer accepting submissions.'
       });
     }
 
@@ -76,7 +76,7 @@ router.post('/', auth, async (req, res) => {
       const question = test.questions.id(answer.questionId);
       const isCorrect = question && question.correctAnswer === answer.selectedAnswer;
       if (isCorrect) score++;
-      
+
       return {
         questionId: answer.questionId,
         selectedAnswer: answer.selectedAnswer,
@@ -174,25 +174,25 @@ router.get('/course-results', adminAuth, async (req, res) => {
   try {
     const Course = require('../models/Course');
     const Student = require('../models/Student');
-    
+
     // Get all courses
     const courses = await Course.find({ isActive: { $ne: false } }).sort({ courseCode: 1 });
-    
+
     const courseResults = [];
-    
+
     for (const course of courses) {
       // Get all students in this course
       const students = await Student.find({ course: course.courseCode })
         .sort({ enrollmentNo: 1 })
         .select('enrollmentNo fullName username emailId');
-      
+
       if (students.length === 0) continue; // Skip courses with no students
-      
+
       // Get all tests for this course
       const tests = await Test.find({ course: course._id })
         .populate('course', 'courseCode courseName')
         .sort({ 'subject.subjectCode': 1, createdAt: 1 });
-      
+
       // Group tests by subject
       const testsBySubject = {};
       tests.forEach(test => {
@@ -206,20 +206,20 @@ router.get('/course-results', adminAuth, async (req, res) => {
         }
         testsBySubject[subjectKey].tests.push(test);
       });
-      
+
       const subjects = Object.values(testsBySubject);
-      
+
       // Get student results
       const studentResults = [];
-      
+
       for (const student of students) {
         const subjectResults = [];
-        
+
         for (const subject of subjects) {
           let totalTestScore = 0;
           let totalPossibleScore = 0;
           let hasAttemptedAnyTest = false;
-          
+
           // Calculate total test score for this subject
           for (const test of subject.tests) {
             try {
@@ -227,7 +227,7 @@ router.get('/course-results', adminAuth, async (req, res) => {
                 testId: test._id,
                 userId: student._id
               });
-              
+
               if (submission) {
                 totalTestScore += submission.score || 0;
                 hasAttemptedAnyTest = true;
@@ -237,7 +237,7 @@ router.get('/course-results', adminAuth, async (req, res) => {
               console.error('Error fetching submission for student:', student.enrollmentNo, 'test:', test._id, submissionError);
             }
           }
-          
+
           // Get internal marks for this subject
           let internalMark = null;
           try {
@@ -249,7 +249,7 @@ router.get('/course-results', adminAuth, async (req, res) => {
           } catch (internalMarkError) {
             console.error('Error fetching internal marks for student:', student.enrollmentNo, 'subject:', subject.subjectCode, internalMarkError);
           }
-          
+
           subjectResults.push({
             subjectCode: subject.subjectCode,
             subjectName: subject.subjectName,
@@ -259,7 +259,7 @@ router.get('/course-results', adminAuth, async (req, res) => {
             internalMarksComments: internalMark ? internalMark.evaluatorComments : null
           });
         }
-        
+
         studentResults.push({
           enrollmentNo: student.enrollmentNo,
           fullName: student.fullName,
@@ -268,10 +268,10 @@ router.get('/course-results', adminAuth, async (req, res) => {
           subjectResults: subjectResults
         });
       }
-      
+
       // Check if results are released for this course
       const resultsReleased = course.resultsReleased || false;
-      
+
       courseResults.push({
         courseId: course._id,
         courseCode: course.courseCode,
@@ -285,13 +285,13 @@ router.get('/course-results', adminAuth, async (req, res) => {
         resultsReleased: resultsReleased
       });
     }
-    
+
     res.json({ courseResults });
   } catch (error) {
     console.error('Get course results error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error while fetching course results',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -318,10 +318,10 @@ router.get('/:id', adminAuth, async (req, res) => {
 router.post('/fullscreen-exit', auth, async (req, res) => {
   try {
     const { testId, timestamp } = req.body;
-    
+
     // You can implement additional logic here to track fullscreen exits
     // For now, just acknowledge the event
-    
+
     res.json({ message: 'Fullscreen exit recorded' });
   } catch (error) {
     console.error('Fullscreen exit tracking error:', error);
@@ -334,46 +334,46 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
   try {
     const Course = require('../models/Course');
     const Student = require('../models/Student');
-    
+
     // Get all courses with their tests and submissions
     const courses = await Course.find({ isActive: { $ne: false } }).populate('subjects');
     const reports = [];
-    
+
     for (const course of courses) {
       // Group by subjects within each course
       for (const subject of course.subjects) {
         // Get all tests for this course and subject
-        const tests = await Test.find({ 
+        const tests = await Test.find({
           course: course._id,
-          'subject.subjectCode': subject.subjectCode 
+          'subject.subjectCode': subject.subjectCode
         }).sort({ createdAt: 1 });
-        
+
         if (tests.length === 0) continue; // Skip if no tests for this subject
-        
+
         // Get all students in this course
         const students = await Student.find({ course: course.courseCode })
           .sort({ enrollmentNo: 1 });
-        
+
         // Prepare student results
         const studentResults = [];
-        
+
         for (const student of students) {
           const testResults = [];
-          
+
           for (const test of tests) {
             // Get submission for this student and test
             const submission = await Submission.findOne({
               testId: test._id,
               userId: student._id
             });
-            
+
             // Get internal marks for this student and subject
             const internalMark = await InternalMarks.findOne({
               studentId: student._id,
               courseId: course._id,
               subjectCode: subject.subjectCode
             });
-            
+
             const testResult = {
               test: {
                 _id: test._id,
@@ -411,10 +411,10 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
                 } : null
               }
             };
-            
+
             testResults.push(testResult);
           }
-          
+
           studentResults.push({
             student: {
               _id: student._id,
@@ -427,7 +427,7 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
             testResults: testResults
           });
         }
-        
+
         // Create report for this course-subject combination
         reports.push({
           course: {
@@ -451,7 +451,7 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
           statistics: {
             totalStudents: students.length,
             totalTests: tests.length,
-            averageScore: studentResults.length > 0 ? 
+            averageScore: studentResults.length > 0 ?
               studentResults.reduce((sum, sr) => {
                 const totalScore = sr.testResults.reduce((testSum, tr) => testSum + tr.result.score, 0);
                 return sum + totalScore;
@@ -460,13 +460,13 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
         });
       }
     }
-    
+
     res.json({ reports });
   } catch (error) {
     console.error('Get reports error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error while fetching reports',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -476,7 +476,7 @@ router.post('/release-results/:courseId', adminAuth, async (req, res) => {
   try {
     const { courseId } = req.params;
     const Course = require('../models/Course');
-    
+
     // Find the course and update results released status
     const course = await Course.findById(courseId);
     if (!course) {
@@ -490,7 +490,7 @@ router.post('/release-results/:courseId', adminAuth, async (req, res) => {
       await course.save();
     }
 
-    res.json({ 
+    res.json({
       message: 'Results released successfully',
       courseCode: course.courseCode,
       courseName: course.courseName

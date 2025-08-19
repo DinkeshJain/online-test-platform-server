@@ -9,11 +9,11 @@ const router = express.Router();
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-        file.mimetype === 'application/vnd.ms-excel') {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel') {
       cb(null, true);
     } else {
       cb(new Error('Only Excel files are allowed'), false);
@@ -40,25 +40,25 @@ function isTestCurrentlyActive(test) {
   if (!test.isActive) {
     return false;
   }
-  
+
   // If no time restrictions are set, just use the isActive flag
   if (!test.activeFrom || !test.activeTo) {
     return test.isActive;
   }
-  
+
   const now = new Date();
   const activeFrom = new Date(test.activeFrom);
   const activeTo = new Date(test.activeTo);
-  
+
   // Check if dates are valid
   if (isNaN(activeFrom.getTime()) || isNaN(activeTo.getTime())) {
     return test.isActive;
   }
-  
+
   // Test is visible if it's within the active period
   // Students should see all active tests during the active period
   const isWithinActivePeriod = now >= activeFrom && now <= activeTo;
-  
+
   return test.isActive && isWithinActivePeriod;
 }
 
@@ -68,23 +68,23 @@ function canStartTest(test) {
   if (!test.isActive) {
     return false;
   }
-  
+
   // If no time restrictions are set, just use the isActive flag
   if (!test.activeFrom || !test.activeTo) {
     return test.isActive;
   }
-  
+
   const now = new Date();
   const activeFrom = new Date(test.activeFrom);
-  
+
   // Check if dates are valid
   if (isNaN(activeFrom.getTime())) {
     return test.isActive;
   }
-  
+
   // Check if current time is after the active start time
   const canStart = now >= activeFrom;
-  
+
   return test.isActive && canStart;
 }
 
@@ -94,28 +94,28 @@ function canSubmitTest(test, testStartedAt) {
   if (!test.isActive) {
     return false;
   }
-  
+
   // If no time restrictions are set, just use the isActive flag
   if (!test.activeFrom || !test.activeTo) {
     return test.isActive;
   }
-  
+
   const now = new Date();
   const activeTo = new Date(test.activeTo);
   const testStartTime = new Date(testStartedAt);
-  
+
   // Check if dates are valid
   if (isNaN(activeTo.getTime()) || isNaN(testStartTime.getTime())) {
     return test.isActive;
   }
-  
+
   // Calculate maximum allowed submission time
   const submissionDeadline = activeTo;
-  
+
   // Also check if student has had enough time to complete the test
   const testDurationMs = test.duration * 60 * 1000; // test duration in milliseconds
   const studentTimeLimit = new Date(testStartTime.getTime() + testDurationMs);
-  
+
   // Student can submit if:
   // 1. It's before the test end time, AND
   // 2. They haven't exceeded their individual time limit
@@ -171,7 +171,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
       if (row.length < 6) continue; // Skip incomplete rows
 
       const [sno, question, rightOption, option2, option3, option4] = row;
-      
+
       if (!question || !rightOption || !option2 || !option3 || !option4) {
         continue; // Skip rows with missing data
       }
@@ -231,8 +231,8 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
     });
 
     await test.save();
-    res.status(201).json({ 
-      message: `Test created successfully with ${questions.length} questions`, 
+    res.status(201).json({
+      message: `Test created successfully with ${questions.length} questions`,
       test: {
         _id: test._id,
         title: test.displayTitle,
@@ -309,8 +309,8 @@ router.post('/', adminAuth, async (req, res) => {
     });
 
     await test.save();
-    res.status(201).json({ 
-      message: 'Test created successfully', 
+    res.status(201).json({
+      message: 'Test created successfully',
       test: {
         ...test.toJSON(),
         title: test.displayTitle
@@ -326,21 +326,21 @@ router.post('/', adminAuth, async (req, res) => {
 router.get('/', auth, async (req, res) => {
   try {
     let tests;
-    
+
     if (req.user.role === 'student') {
       // Filter tests by student's course
       const Course = require('../models/Course');
       const studentCourse = await Course.findOne({ courseCode: req.user.course });
-      
+
       if (!studentCourse) {
         return res.status(400).json({ message: 'Student course not found' });
       }
-      
+
       const allTests = await Test.find({ course: studentCourse._id })
         .populate('createdBy', 'name')
         .populate('course', 'courseCode courseName')
         .sort({ createdAt: -1 });
-      
+
       // Filter to only show tests that are currently active
       tests = allTests.filter(test => isTestCurrentlyActive(test));
     } else {
@@ -387,14 +387,14 @@ router.get('/:id', auth, async (req, res) => {
       // Provide detailed timing information for better error messages
       const now = new Date();
       const activeFrom = new Date(test.activeFrom);
-      
+
       let errorMessage = 'Test is not currently active';
       if (now < activeFrom) {
         errorMessage = `Test will be available from ${activeFrom.toLocaleString()}`;
       } else {
         errorMessage = `Test is no longer available for new attempts.`;
       }
-      
+
       return res.status(400).json({ message: errorMessage });
     }
 
@@ -420,7 +420,7 @@ router.get('/:id', auth, async (req, res) => {
     // Dynamic question allocation logic
     let questions;
     let maxMarks;
-    
+
     if (allQuestions.length >= 70) {
       // If 70 or more questions, randomly select 70 questions
       questions = shuffleArray(allQuestions).slice(0, 70);
@@ -544,12 +544,12 @@ router.put('/:id', adminAuth, async (req, res) => {
 
     test.duration = duration || test.duration;
     test.course = course || test.course;
-    
+
     // Update subject if provided
     if (subject) {
       test.subject = subject;
     }
-    
+
     test.questions = questions || test.questions;
     test.isActive = isActive !== undefined ? isActive : test.isActive;
     test.showScoresToStudents = showScoresToStudents !== undefined ? showScoresToStudents : test.showScoresToStudents;
@@ -569,9 +569,9 @@ router.put('/:id', adminAuth, async (req, res) => {
     }
 
     await test.save();
-    
-    res.json({ 
-      message: 'Test updated successfully', 
+
+    res.json({
+      message: 'Test updated successfully',
       test: {
         ...test.toJSON(),
         title: test.displayTitle
@@ -594,7 +594,7 @@ router.patch('/:id/toggle-scores', adminAuth, async (req, res) => {
     test.showScoresToStudents = !test.showScoresToStudents;
     await test.save();
 
-    res.json({ 
+    res.json({
       message: `Score visibility ${test.showScoresToStudents ? 'enabled' : 'disabled'} for students`,
       showScoresToStudents: test.showScoresToStudents
     });
@@ -669,4 +669,3 @@ router.delete('/:id', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
-
