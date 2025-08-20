@@ -202,7 +202,7 @@ router.get('/search', async (req, res) => {
 });
 
 // Get detailed result for a specific student
-router.get('/student/:studentId', async (req, res) => {
+router.get('/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
     
