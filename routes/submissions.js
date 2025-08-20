@@ -110,6 +110,7 @@ router.post('/', auth, async (req, res) => {
       totalQuestions: test.questions.length,
       timeSpent: timeSpent || 0,
       testStartedAt: studentTestStartTime,
+      isCompleted: true
     });
 
     await submission.save();
