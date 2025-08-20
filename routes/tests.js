@@ -166,7 +166,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
 
     // Headers are in row 4 (index 3), data starts from row 6 (index 5)  
     const questions = [];
-    for (let i = 5; i < data.length; i++) { // Start from row 6 (index 5)
+    for (let i = 4; i < data.length; i++) { // Start from row 6 (index 5)
       const row = data[i];
       if (row.length < 6) continue; // Skip incomplete rows
 
