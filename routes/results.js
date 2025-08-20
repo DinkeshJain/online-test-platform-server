@@ -7,27 +7,152 @@ const Test = require('../models/Test');
 
 const router = express.Router();
 
-// Get courses that have published results
+// Get courses that have published results (existing)
 router.get('/courses-with-results', async (req, res) => {
   try {
-    // Find courses that have either internal marks or test submissions
     const coursesWithInternalMarks = await InternalMarks.distinct('course');
     const coursesWithTestResults = await Submission.distinct('testId').then(async (testIds) => {
       const tests = await Test.find({ _id: { $in: testIds } }).distinct('course');
       return tests;
     });
-    
+
     const allCourseIds = [...new Set([...coursesWithInternalMarks, ...coursesWithTestResults])];
-    
-    const courses = await Course.find({ 
+    const courses = await Course.find({
       _id: { $in: allCourseIds },
-      isActive: true 
+      isActive: true
     }).select('courseCode courseName');
-    
+
     res.json({ courses });
   } catch (error) {
     console.error('Error fetching courses with results:', error);
     res.status(500).json({ message: 'Server error while fetching courses' });
+  }
+});
+
+// Get subjects for a specific course (new)
+router.get('/course/:courseId/subjects', async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const course = await Course.findById(courseId).populate('subjects', 'subjectCode subjectName');
+    if (!course) return res.status(404).json({ message: 'Course not found' });
+
+    res.json({ subjects: course.subjects || [] });
+  } catch (error) {
+    console.error('Failed to fetch subjects:', error);
+    res.status(500).json({ message: 'Server error fetching subjects' });
+  }
+});
+
+// Get detailed report for a course and subject (new)
+router.get('/reports/:courseId/:subjectCode', async (req, res) => {
+  try {
+    const { courseId, subjectCode } = req.params;
+
+    const course = await Course.findById(courseId);
+    if (!course) return res.status(404).json({ message: 'Course not found' });
+
+    // Get tests for course and subject
+    const tests = await Test.find({ course: courseId, 'subject.subjectCode': subjectCode }).sort({ createdAt: 1 });
+    if (tests.length === 0) return res.status(404).json({ message: 'No tests found for subject' });
+
+    // Get all students in the course
+    const students = await Student.find({ course: course.courseCode }).sort({ enrollmentNo: 1 });
+
+    const studentResults = [];
+
+    for (const student of students) {
+      const testResults = [];
+
+      for (const test of tests) {
+        // Find submission of test by the student
+        const submission = await Submission.findOne({ userId: student._id, testId: test._id });
+
+        // Get internal marks for student in this course and subject
+        const internalMark = await InternalMarks.findOne({ studentId: student._id, courseId, subjectCode });
+
+        const testResult = {
+          test: {
+            _id: test._id,
+            title: test.displayTitle,
+            totalQuestions: test.questions.length,
+            duration: test.duration,
+            testType: test.testType || 'official'
+          },
+          result: submission
+            ? {
+              status: 'attempted',
+              score: submission.score,
+              totalQuestions: submission.totalQuestions,
+              percentage: Math.round((submission.score / submission.totalQuestions) * 100),
+              submittedAt: submission.submittedAt,
+              testStartedOn: submission.testStartedAt,
+              timeSpent: submission.timeSpent,
+              answers: submission.answers,
+              internalMarks: internalMark
+                ? {
+                  marks: internalMark.internalMarks,
+                  comments: internalMark.evaluatorComments,
+                  evaluatedBy: internalMark.evaluatedBy,
+                  evaluatedAt: internalMark.createdAt
+                }
+                : null
+            }
+            : {
+              status: 'not_attempted',
+              score: 0,
+              totalQuestions: test.questions.length,
+              percentage: 0,
+              internalMarks: internalMark
+                ? {
+                  marks: internalMark.internalMarks,
+                  comments: internalMark.evaluatorComments,
+                  evaluatedBy: internalMark.evaluatedBy,
+                  evaluatedAt: internalMark.createdAt
+                }
+                : null
+            }
+        };
+
+        testResults.push(testResult);
+      }
+
+      studentResults.push({
+        student: {
+          _id: student._id,
+          fullName: student.fullName,
+          enrollmentNo: student.enrollmentNo,
+          emailId: student.emailId,
+          course: student.course,
+          fatherName: student.fatherName
+        },
+        testResults
+      });
+    }
+
+    res.json({
+      report: {
+        course: {
+          _id: course._id,
+          courseCode: course.courseCode,
+          courseName: course.courseName
+        },
+        subject: {
+          subjectCode,
+          subjectName: tests[0]?.subject?.subjectName || ''
+        },
+        tests: tests.map(test => ({
+          _id: test._id,
+          title: test.displayTitle,
+          totalQuestions: test.questions.length,
+          duration: test.duration,
+          testType: test.testType || 'official'
+        })),
+        studentResults
+      }
+    });
+  } catch (error) {
+    console.error('Failed to fetch report:', error);
+    res.status(500).json({ message: 'Server error in fetching report' });
   }
 });
 
@@ -428,6 +553,169 @@ router.put('/update-question-marks/:submissionId', async (req, res) => {
   } catch (error) {
     console.error('Error updating question marks:', error);
     res.status(500).json({ message: 'Server error while updating marks' });
+  }
+});
+
+// Get subjects for a specific course (needed for frontend dropdown)
+router.get('/subjects-by-course/:courseId', async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+
+    // Get subjects that have tests for this course
+    const tests = await Test.find({ course: courseId }).distinct('subject.subjectCode');
+    const subjects = [];
+
+    for (const subjectCode of tests) {
+      const testWithSubject = await Test.findOne({
+        course: courseId,
+        'subject.subjectCode': subjectCode
+      }).select('subject');
+
+      if (testWithSubject && testWithSubject.subject) {
+        subjects.push({
+          subjectCode: testWithSubject.subject.subjectCode,
+          subjectName: testWithSubject.subject.subjectName
+        });
+      }
+    }
+
+    res.json({ subjects });
+  } catch (error) {
+    console.error('Failed to fetch subjects:', error);
+    res.status(500).json({ message: 'Server error fetching subjects' });
+  }
+});
+
+// Get detailed report for a specific course and subject (for Excel export)
+router.get('/reports/:courseId/:subjectCode', async (req, res) => {
+  try {
+    const { courseId, subjectCode } = req.params;
+
+    const course = await Course.findById(courseId);
+    if (!course) return res.status(404).json({ message: 'Course not found' });
+
+    // Get tests for this course and subject
+    const tests = await Test.find({
+      course: courseId,
+      'subject.subjectCode': subjectCode
+    }).sort({ createdAt: 1 });
+
+    if (tests.length === 0) {
+      return res.status(404).json({ message: 'No tests found for subject' });
+    }
+
+    // Get students in this course
+    const students = await Student.find({ course: course.courseCode })
+      .sort({ enrollmentNo: 1 });
+
+    const studentResults = [];
+
+    for (const student of students) {
+      const testResults = [];
+
+      for (const test of tests) {
+        // Find submission for this student and test
+        const submission = await Submission.findOne({
+          userId: student._id,
+          testId: test._id
+        });
+
+        // Get internal marks
+        const internalMark = await InternalMarks.findOne({
+          studentId: student._id,
+          courseId: courseId,
+          subjectCode: subjectCode
+        });
+
+        const testResult = {
+          test: {
+            _id: test._id,
+            title: test.displayTitle,
+            totalQuestions: test.questions.length,
+            duration: test.duration,
+            testType: test.testType || 'official'
+          },
+          result: submission ? {
+            status: 'attempted',
+            score: submission.score,
+            totalQuestions: submission.totalQuestions,
+            percentage: Math.round((submission.score / submission.totalQuestions) * 100),
+            submittedAt: submission.submittedAt,
+            testStartedOn: submission.testStartedAt || submission.createdAt,
+            timeSpent: submission.timeSpent,
+            answers: submission.answers,
+            submissionId: submission._id,
+            internalMarks: internalMark ? {
+              marks: internalMark.internalMarks,
+              comments: internalMark.evaluatorComments,
+              evaluatedBy: internalMark.evaluatedBy,
+              evaluatedAt: internalMark.createdAt
+            } : null
+          } : {
+            status: 'not_attempted',
+            score: 0,
+            totalQuestions: test.questions.length,
+            percentage: 0,
+            internalMarks: internalMark ? {
+              marks: internalMark.internalMarks,
+              comments: internalMark.evaluatorComments,
+              evaluatedBy: internalMark.evaluatedBy,
+              evaluatedAt: internalMark.createdAt
+            } : null
+          }
+        };
+
+        testResults.push(testResult);
+      }
+
+      studentResults.push({
+        student: {
+          _id: student._id,
+          fullName: student.fullName,
+          enrollmentNo: student.enrollmentNo,
+          emailId: student.emailId,
+          course: student.course,
+          fatherName: student.fatherName
+        },
+        testResults: testResults
+      });
+    }
+
+    res.json({
+      report: {
+        course: {
+          _id: course._id,
+          courseCode: course.courseCode,
+          courseName: course.courseName
+        },
+        subject: {
+          subjectCode: subjectCode,
+          subjectName: tests[0]?.subject?.subjectName || ''
+        },
+        tests: tests.map(test => ({
+          _id: test._id,
+          title: test.displayTitle,
+          totalQuestions: test.questions.length,
+          duration: test.duration,
+          testType: test.testType || 'official'
+        })),
+        studentResults: studentResults,
+        statistics: {
+          totalStudents: students.length,
+          totalTests: tests.length,
+          averageScore: studentResults.length > 0 ?
+            studentResults.reduce((sum, sr) => {
+              const totalScore = sr.testResults.reduce((testSum, tr) =>
+                testSum + tr.result.score, 0);
+              return sum + totalScore;
+            }, 0) / (studentResults.length * tests.length) : 0
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Failed to fetch detailed report:', error);
+    res.status(500).json({ message: 'Server error in fetching detailed report' });
   }
 });
 

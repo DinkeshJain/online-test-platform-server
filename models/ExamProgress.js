@@ -41,30 +41,6 @@ const examProgressSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  // Proctoring data
-  proctoringData: {
-    fullscreenExits: {
-      type: Number,
-      default: 0
-    },
-    windowSwitches: {
-      type: Number,
-      default: 0
-    },
-    tabSwitches: {
-      type: Number,
-      default: 0
-    },
-    violations: [{
-      type: {
-        type: String,
-        enum: ['fullscreen_exit', 'window_blur', 'tab_switch', 'keyboard_shortcut', 'mouse_leave']
-      },
-      description: String,
-      timestamp: Date,
-      timeIntoTest: Number
-    }]
-  },
   // Network/system crash detection
   lastHeartbeat: {
     type: Date,

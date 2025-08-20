@@ -70,7 +70,8 @@ app.use('/api/maintenance', require('./routes/maintenance'));
 app.use('/api/exam-progress', require('./routes/examProgress'));
 app.use('/api/results', require('./routes/results'));
 
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/online-test-app')
+
+mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
 

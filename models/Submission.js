@@ -66,12 +66,6 @@ const submissionSchema = new mongoose.Schema({
   testStartedAt: {
     type: Date,
     default: Date.now
-  },
-  proctoring: {
-    fullscreenExits: {
-      type: Number,
-      default: 0
-    }
   }
 }, {
   timestamps: true

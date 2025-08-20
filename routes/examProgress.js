@@ -16,7 +16,6 @@ router.post('/save', auth, async (req, res) => {
       currentQuestionIndex, 
       timeLeft, 
       testStartedAt,
-      proctoringData 
     } = req.body;
 
     if (!testId || timeLeft === undefined) {
@@ -70,13 +69,7 @@ router.post('/save', auth, async (req, res) => {
       testStartedAt: testStartedAt || new Date(),
       lastSavedAt: new Date(),
       lastHeartbeat: new Date(),
-      isActive: true,
-      proctoringData: proctoringData || {
-        fullscreenExits: 0,
-        windowSwitches: 0,
-        tabSwitches: 0,
-        violations: []
-      }
+      isActive: true
     };
 
     const progress = await ExamProgress.findOneAndUpdate(
@@ -167,7 +160,6 @@ router.get('/load/:testId', auth, async (req, res) => {
         currentQuestionIndex: progress.currentQuestionIndex,
         timeLeft: progress.timeLeft,
         testStartedAt: progress.testStartedAt,
-        proctoringData: progress.proctoringData,
         resumeCount: progress.resumeCount,
         crashDetected: progress.crashDetected,
         lastSavedAt: progress.lastSavedAt

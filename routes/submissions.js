@@ -43,7 +43,7 @@ function canSubmitTest(test, testStartedAt) {
 // Submit test answers
 router.post('/', auth, async (req, res) => {
   try {
-    const { testId, answers, timeSpent, proctoring, testStartedAt } = req.body;
+    const { testId, answers, timeSpent, testStartedAt } = req.body;
 
     // Get the test to validate answers
     const test = await Test.findById(testId);
@@ -110,7 +110,6 @@ router.post('/', auth, async (req, res) => {
       totalQuestions: test.questions.length,
       timeSpent: timeSpent || 0,
       testStartedAt: studentTestStartTime,
-      proctoring: proctoring || {}
     });
 
     await submission.save();
