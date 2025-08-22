@@ -306,7 +306,18 @@ router.post('/heartbeat/:testId', auth, async (req, res) => {
 // Submit test answers - UPDATED to handle drafts properly
 router.post('/', auth, async (req, res) => {
   try {
-    const { testId, answers, timeSpent, testStartedAt } = req.body;
+    const { testId, answers, timeSpent, testStartedAt, proctoring } = req.body;
+
+    // Better validation
+    if (!testId) {
+      return res.status(400).json({ message: 'testId is required' });
+    }
+    if (!answers || !Array.isArray(answers)) {
+      return res.status(400).json({ message: 'answers must be an array' });
+    }
+    if (typeof timeSpent !== 'number') {
+      return res.status(400).json({ message: 'timeSpent must be a number' });
+    }
 
     // Get the test to validate answers
     const test = await Test.findById(testId);
@@ -359,6 +370,12 @@ router.post('/', auth, async (req, res) => {
       };
     });
     const testWithCourse = await Test.findById(testId).populate('course', 'courseCode');
+    if (!testWithCourse) {
+      return res.status(404).json({ message: 'Test not found' });
+    }
+    if (!testWithCourse.course) {
+      return res.status(400).json({ message: 'Test course not found' });
+    }
     // Create FINAL submission
     const submission = new Submission({
       testId,
