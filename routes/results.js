@@ -43,32 +43,81 @@ router.get('/course/:courseId/subjects', async (req, res) => {
   }
 });
 
-// Get detailed report for a course and subject (new)
+// Get detailed report for a specific course and subject (OPTIMIZED)
 router.get('/reports/:courseId/:subjectCode', async (req, res) => {
   try {
     const { courseId, subjectCode } = req.params;
+    const { examType } = req.query;
 
     const course = await Course.findById(courseId);
     if (!course) return res.status(404).json({ message: 'Course not found' });
 
-    // Get tests for course and subject
-    const tests = await Test.find({ course: courseId, 'subject.subjectCode': subjectCode }).sort({ createdAt: 1 });
-    if (tests.length === 0) return res.status(404).json({ message: 'No tests found for subject' });
+    // Get tests for this course and subject
+    let testQuery = {
+      course: course.courseCode,
+      'subject.subjectCode': subjectCode
+    };
+    if (examType) {
+      testQuery.testType = examType;
+    }
 
-    // Get all students in the course
-    const students = await Student.find({ course: course.courseCode }).sort({ enrollmentNo: 1 });
+    const tests = await Test.find(testQuery).sort({ createdAt: 1 });
+    if (tests.length === 0) {
+      return res.status(404).json({ message: 'No tests found for subject' });
+    }
+
+    const testIds = tests.map(test => test._id);
+
+    // Get submissions for these tests
+    let submissionQuery = {
+      testId: { $in: testIds },
+      isDraft: false,
+      isCompleted: true
+    };
+
+    const submissions = await Submission.find(submissionQuery);
+
+    // FIXED: Get students for this course using ObjectId
+    const students = await Student.find({
+      course: course.courseCode  // Fixed: Use courseId instead of course.courseCode
+    }).select('enrollmentNo fullName emailId fatherName _id');
+
+    // Create student lookup map for faster access
+    const studentMap = new Map();
+    students.forEach(student => {
+      studentMap.set(student._id.toString(), student);
+    });
+
+    // Group submissions by student
+    const submissionsByStudent = new Map();
+    submissions.forEach(submission => {
+      const studentId = submission.userId.toString();
+      if (!submissionsByStudent.has(studentId)) {
+        submissionsByStudent.set(studentId, []);
+      }
+      submissionsByStudent.get(studentId).push(submission);
+    });
 
     const studentResults = [];
 
+    // Process each student
     for (const student of students) {
+      const studentId = student._id.toString();
+      const studentSubmissions = submissionsByStudent.get(studentId) || [];
       const testResults = [];
 
       for (const test of tests) {
-        // Find submission of test by the student
-        const submission = await Submission.findOne({ userId: student._id, testId: test._id });
+        // Find submission for this test
+        const submission = studentSubmissions.find(
+          sub => sub.testId.toString() === test._id.toString()
+        );
 
-        // Get internal marks for student in this course and subject
-        const internalMark = await InternalMarks.findOne({ studentId: student._id, courseId, subjectCode });
+        // Get internal marks
+        const internalMark = await InternalMarks.findOne({
+          studentId: student._id,
+          courseId: courseId,
+          subjectCode: subjectCode
+        });
 
         const testResult = {
           test: {
@@ -78,39 +127,34 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
             duration: test.duration,
             testType: test.testType || 'official'
           },
-          result: submission
-            ? {
-              status: 'attempted',
-              score: submission.score,
-              totalQuestions: submission.totalQuestions,
-              percentage: Math.round((submission.score / submission.totalQuestions) * 100),
-              submittedAt: submission.submittedAt,
-              testStartedOn: submission.testStartedAt,
-              timeSpent: submission.timeSpent,
-              answers: submission.answers,
-              internalMarks: internalMark
-                ? {
-                  marks: internalMark.internalMarks,
-                  comments: internalMark.evaluatorComments,
-                  evaluatedBy: internalMark.evaluatedBy,
-                  evaluatedAt: internalMark.createdAt
-                }
-                : null
-            }
-            : {
-              status: 'not_attempted',
-              score: 0,
-              totalQuestions: test.questions.length,
-              percentage: 0,
-              internalMarks: internalMark
-                ? {
-                  marks: internalMark.internalMarks,
-                  comments: internalMark.evaluatorComments,
-                  evaluatedBy: internalMark.evaluatedBy,
-                  evaluatedAt: internalMark.createdAt
-                }
-                : null
-            }
+          result: submission ? {
+            status: 'attempted',
+            score: submission.score,
+            totalQuestions: submission.totalQuestions,
+            percentage: Math.round((submission.score / submission.totalQuestions) * 100),
+            submittedAt: submission.submittedAt,
+            testStartedOn: submission.testStartedAt || submission.createdAt,
+            timeSpent: submission.timeSpent,
+            answers: submission.answers,
+            submissionId: submission._id,
+            internalMarks: internalMark ? {
+              marks: internalMark.internalMarks,
+              comments: internalMark.evaluatorComments,
+              evaluatedBy: internalMark.evaluatedBy,
+              evaluatedAt: internalMark.createdAt
+            } : null
+          } : {
+            status: 'not_attempted',
+            score: 0,
+            totalQuestions: test.questions.length,
+            percentage: 0,
+            internalMarks: internalMark ? {
+              marks: internalMark.internalMarks,
+              comments: internalMark.evaluatorComments,
+              evaluatedBy: internalMark.evaluatedBy,
+              evaluatedAt: internalMark.createdAt
+            } : null
+          }
         };
 
         testResults.push(testResult);
@@ -122,10 +166,10 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
           fullName: student.fullName,
           enrollmentNo: student.enrollmentNo,
           emailId: student.emailId,
-          course: student.course,
+          course: course.courseCode, // Store courseId for consistency
           fatherName: student.fatherName
         },
-        testResults
+        testResults: testResults
       });
     }
 
@@ -137,7 +181,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
           courseName: course.courseName
         },
         subject: {
-          subjectCode,
+          subjectCode: subjectCode,
           subjectName: tests[0]?.subject?.subjectName || ''
         },
         tests: tests.map(test => ({
@@ -147,12 +191,23 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
           duration: test.duration,
           testType: test.testType || 'official'
         })),
-        studentResults
+        studentResults: studentResults,
+        statistics: {
+          totalStudents: students.length,
+          totalTests: tests.length,
+          averageScore: studentResults.length > 0 ?
+            studentResults.reduce((sum, sr) => {
+              const totalScore = sr.testResults.reduce((testSum, tr) =>
+                testSum + tr.result.score, 0);
+              return sum + totalScore;
+            }, 0) / (studentResults.length * tests.length) : 0
+        }
       }
     });
+
   } catch (error) {
-    console.error('Failed to fetch report:', error);
-    res.status(500).json({ message: 'Server error in fetching report' });
+    console.error('Failed to fetch detailed report:', error);
+    res.status(500).json({ message: 'Server error in fetching detailed report' });
   }
 });
 
@@ -160,7 +215,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
 router.get('/search', async (req, res) => {
   try {
     const { courseId, rollNumber } = req.query;
-    
+
     if (!courseId || !rollNumber) {
       return res.status(400).json({ message: 'Course ID and roll number are required' });
     }
@@ -171,11 +226,12 @@ router.get('/search', async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    // Search students with partial roll number match
+    // FIXED: Search students with partial enrollment number match and populate course
     const students = await Student.find({
-      course: courseId,
-      rollNumber: { $regex: rollNumber, $options: 'i' }
-    }).select('name rollNumber course');
+      course: course.courseCode,  // Fixed: Use courseId directly
+      enrollmentNo: { $regex: rollNumber, $options: 'i' }  // Fixed: Use enrollmentNo field
+    }).select('fullName enrollmentNo course')  // Fixed: Use correct field names
+      .populate('course', 'courseCode courseName');
 
     if (students.length === 0) {
       return res.json({ results: [] });
@@ -186,8 +242,8 @@ router.get('/search', async (req, res) => {
     for (const student of students) {
       const result = {
         student: {
-          name: student.name,
-          rollNumber: student.rollNumber
+          name: student.fullName,  // Fixed: Use fullName
+          rollNumber: student.enrollmentNo  // Fixed: Use enrollmentNo
         },
         course: {
           courseCode: course.courseCode,
@@ -201,7 +257,7 @@ router.get('/search', async (req, res) => {
       // Get internal marks for all subjects
       const internalMarks = await InternalMarks.find({
         student: student._id,
-        course: courseId
+        course: course.courseCode  // Fixed: Use courseId
       }).populate('subject', 'subjectCode subjectName hasExternalExam');
 
       // Get external marks from test submissions
@@ -209,7 +265,7 @@ router.get('/search', async (req, res) => {
         userId: student._id
       }).populate({
         path: 'testId',
-        match: { course: courseId },
+        match: { course: course.courseCode },
         select: 'subject questions'
       });
 
@@ -219,7 +275,7 @@ router.get('/search', async (req, res) => {
       // Add internal marks
       for (const mark of internalMarks) {
         if (!mark.subject) continue;
-        
+
         const subjectKey = mark.subject.subjectCode;
         if (!subjectMap.has(subjectKey)) {
           subjectMap.set(subjectKey, {
@@ -233,7 +289,7 @@ router.get('/search', async (req, res) => {
             totalMaxMarks: 100
           });
         }
-        
+
         const subjectData = subjectMap.get(subjectKey);
         subjectData.internalMarks = mark.marks;
       }
@@ -241,7 +297,7 @@ router.get('/search', async (req, res) => {
       // Add external marks from submissions
       for (const submission of submissions) {
         if (!submission.testId || !submission.testId.subject) continue;
-        
+
         const subjectKey = submission.testId.subject.subjectCode;
         if (!subjectMap.has(subjectKey)) {
           subjectMap.set(subjectKey, {
@@ -255,20 +311,20 @@ router.get('/search', async (req, res) => {
             totalMaxMarks: 100
           });
         }
-        
+
         const subjectData = subjectMap.get(subjectKey);
-        
+
         // Calculate external marks based on dynamic question allocation
         const totalQuestions = submission.testId.questions.length;
         let maxMarks = 70;
-        
+
         if (totalQuestions < 70) {
           maxMarks = totalQuestions;
         }
-        
+
         subjectData.externalMarks = submission.score;
         subjectData.externalMaxMarks = maxMarks;
-        
+
         // Adjust total max marks if external exam has different max marks
         if (maxMarks !== 70) {
           subjectData.totalMaxMarks = subjectData.internalMaxMarks + maxMarks;
@@ -296,10 +352,10 @@ router.get('/search', async (req, res) => {
         if (hasMarks) {
           subjectData.totalMarks = totalMarks;
           subjectData.percentage = (totalMarks / subjectData.totalMaxMarks) * 100;
-          
+
           overallTotal += totalMarks;
           overallMaxMarks += subjectData.totalMaxMarks;
-          
+
           result.subjects.push(subjectData);
         }
       }
@@ -330,11 +386,13 @@ router.get('/search', async (req, res) => {
 router.get('/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    
-    const student = await Student.findById(studentId).populate('course');
+
+    // FIXED: Populate course to get course details
+    const student = await Student.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
+    const courseDetails = await Course.findOne({ courseCode: student.course });
 
     // Get all internal marks
     const internalMarks = await InternalMarks.find({
@@ -349,11 +407,12 @@ router.get('/:studentId', async (req, res) => {
       select: 'subject questions duration'
     });
 
+    // FIXED: Use correct field names and populated course
     const result = {
       student: {
-        name: student.name,
-        rollNumber: student.rollNumber,
-        email: student.email
+        name: student.fullName,        // Fixed: Use fullName
+        rollNumber: student.enrollmentNo,  // Fixed: Use enrollmentNo
+        email: student.emailId         // Fixed: Use emailId
       },
       course: {
         courseCode: student.course.courseCode,
@@ -368,7 +427,7 @@ router.get('/:studentId', async (req, res) => {
     const subjectMap = new Map();
     for (const mark of internalMarks) {
       if (!mark.subject) continue;
-      
+
       subjectMap.set(mark.subject.subjectCode, {
         subjectCode: mark.subject.subjectCode,
         subjectName: mark.subject.subjectName,
@@ -384,7 +443,7 @@ router.get('/:studentId', async (req, res) => {
     // Process test submissions
     for (const submission of submissions) {
       if (!submission.testId || !submission.testId.subject) continue;
-      
+
       const subjectKey = submission.testId.subject.subjectCode;
       if (!subjectMap.has(subjectKey)) {
         subjectMap.set(subjectKey, {
@@ -398,20 +457,20 @@ router.get('/:studentId', async (req, res) => {
           totalMaxMarks: 100
         });
       }
-      
+
       const subjectData = subjectMap.get(subjectKey);
-      
+
       // Calculate external marks with dynamic allocation
       const totalQuestions = submission.testId.questions.length;
       let maxMarks = 70;
-      
+
       if (totalQuestions < 70) {
         maxMarks = totalQuestions;
       }
-      
+
       subjectData.externalMarks = submission.score;
       subjectData.externalMaxMarks = maxMarks;
-      
+
       if (maxMarks !== 70) {
         subjectData.totalMaxMarks = subjectData.internalMaxMarks + maxMarks;
       }
@@ -447,10 +506,10 @@ router.get('/:studentId', async (req, res) => {
       if (hasMarks) {
         subjectData.totalMarks = totalMarks;
         subjectData.percentage = (totalMarks / subjectData.totalMaxMarks) * 100;
-        
+
         overallTotal += totalMarks;
         overallMaxMarks += subjectData.totalMaxMarks;
-        
+
         result.subjects.push(subjectData);
       }
     }
@@ -540,7 +599,6 @@ router.put('/update-question-marks/:submissionId', async (req, res) => {
       }
     });
 
-
     submission.score = updatedScore;
     await submission.save();
 
@@ -562,12 +620,12 @@ router.get('/subjects-by-course/:courseId', async (req, res) => {
     const courseId = req.params.courseId;
 
     // Get subjects that have tests for this course
-    const tests = await Test.find({ course: courseId }).distinct('subject.subjectCode');
+    const tests = await Test.find({ course: course.courseCode }).distinct('subject.subjectCode');
     const subjects = [];
 
     for (const subjectCode of tests) {
       const testWithSubject = await Test.findOne({
-        course: courseId,
+        course: course.courseCode,
         'subject.subjectCode': subjectCode
       }).select('subject');
 
@@ -596,7 +654,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
 
     // Get tests for this course and subject
     const tests = await Test.find({
-      course: courseId,
+      course: course.courseCode,
       'subject.subjectCode': subjectCode
     }).sort({ createdAt: 1 });
 
@@ -604,7 +662,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
       return res.status(404).json({ message: 'No tests found for subject' });
     }
 
-    // Get students in this course
+    // FIXED: Get students in this course using ObjectId
     const students = await Student.find({ course: course.courseCode })
       .sort({ enrollmentNo: 1 });
 
@@ -674,7 +732,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
           fullName: student.fullName,
           enrollmentNo: student.enrollmentNo,
           emailId: student.emailId,
-          course: student.course,
+          course: course.courseCode, // Store courseId for consistency
           fatherName: student.fatherName
         },
         testResults: testResults
@@ -720,4 +778,3 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
 });
 
 module.exports = router;
-

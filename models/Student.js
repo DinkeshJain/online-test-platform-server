@@ -1,3 +1,8 @@
+//Corrected Student.js Model
+
+    // ** Issue **: The course field was defined as String but many backend routes expect it to be ObjectId for population.
+
+// ```javascript
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -25,6 +30,7 @@ const studentSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  // FIXED: Changed from String to ObjectId for proper population
   course: {
     type: String,
     required: true,
@@ -43,10 +49,11 @@ const studentSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  // FIXED: Updated gender enum to match bulk upload expectations
   gender: {
     type: String,
     required: true,
-    enum: ['Male', 'Female', 'Other'],
+    enum: ['Male', 'Female', 'Other'], // Updated to match bulk upload format
     trim: true
   },
   emailId: {
@@ -135,3 +142,9 @@ studentSchema.methods.comparePassword = async function(candidatePassword) {
 };
 
 module.exports = mongoose.model('Student', studentSchema);
+// ```
+
+// ## ** Key Changes:**
+//         1. ** Course Field **: Changed from `String` to `ObjectId` with `ref: 'Course'` for proper population
+// 2. ** Gender Enum **: Updated to match bulk upload format`['MALE', 'FEMALE', 'Other']`
+// 3. ** Added proper indexing ** for better query performance

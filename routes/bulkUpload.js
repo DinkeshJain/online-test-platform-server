@@ -10,6 +10,18 @@ const DataCleanupUtility = require('../utils/dataCleanup');
 
 const router = express.Router();
 
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+  // Check for DD.MM.YYYY format
+  const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateStr);
+  if (match) {
+    const [_, day, month, year] = match;
+    return new Date(`${year}-${month}-${day}`);
+  }
+  // Fallback to default parsing
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
 // Test endpoint to check if bulk upload routes are working
 router.get('/test', (req, res) => {
   res.json({ message: 'Bulk upload routes are working!' });
@@ -29,13 +41,13 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
     if (file.fieldname === 'excel') {
       // Accept Excel files
-      if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-          file.mimetype === 'application/vnd.ms-excel') {
+      if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel') {
         cb(null, true);
       } else {
         cb(new Error('Only Excel files are allowed for student data'), false);
@@ -60,7 +72,7 @@ router.post('/test-upload', upload.fields([
 ]), async (req, res) => {
   console.log('=== TEST UPLOAD ENDPOINT HIT ===');
   console.log('Files received:', req.files);
-  res.json({ 
+  res.json({
     message: 'Test upload endpoint reached successfully',
     files: req.files ? Object.keys(req.files) : 'No files',
     hasExcel: !!req.files?.excel,
@@ -73,7 +85,7 @@ router.post('/students', adminAuth, upload.fields([
   { name: 'excel', maxCount: 1 },
   { name: 'photos', maxCount: 100 }
 ]), async (req, res) => {
-  
+
   try {
     if (!req.files.excel || !req.files.excel[0]) {
       return res.status(400).json({ message: 'Excel file is required' });
@@ -81,7 +93,7 @@ router.post('/students', adminAuth, upload.fields([
 
     const excelFile = req.files.excel[0];
     const photos = req.files.photos || [];
-    
+
     // Read Excel file
     let workbook, worksheet, students;
     try {
@@ -89,7 +101,7 @@ router.post('/students', adminAuth, upload.fields([
       const sheetName = workbook.SheetNames[0];
       worksheet = workbook.Sheets[sheetName];
       students = XLSX.utils.sheet_to_json(worksheet);
-      
+
       if (students.length === 0) {
         return res.status(400).json({ message: 'Excel file is empty or has no valid data' });
       }
@@ -100,15 +112,15 @@ router.post('/students', adminAuth, upload.fields([
     // Validate Excel structure and provide helpful error messages
     const firstStudent = students[0];
     const availableColumns = Object.keys(firstStudent);
-    
+
     // Check for required data patterns
-    const hasEnrollmentData = availableColumns.some(col => 
+    const hasEnrollmentData = availableColumns.some(col =>
       ['EnrollmentNo', 'enrollmentNo', 'EnrollMentNo', 'SrNo'].includes(col)
     );
-    const hasNameData = availableColumns.some(col => 
+    const hasNameData = availableColumns.some(col =>
       ['FullName', 'fullName', 'Firstname', 'firstname', 'Name'].includes(col)
     );
-    const hasEmailData = availableColumns.some(col => 
+    const hasEmailData = availableColumns.some(col =>
       ['EmailID', 'emailId', 'Email', 'EmailId'].includes(col)
     );
 
@@ -117,8 +129,8 @@ router.post('/students', adminAuth, upload.fields([
       if (!hasEnrollmentData) missingFields.push('Enrollment/Student ID (columns like: EnrollmentNo, SrNo)');
       if (!hasNameData) missingFields.push('Student Name (columns like: FullName, Firstname, Name)');
       if (!hasEmailData) missingFields.push('Email Address (columns like: EmailID, Email, EmailId)');
-      
-      return res.status(400).json({ 
+
+      return res.status(400).json({
         message: 'Excel file structure error: Missing required data columns',
         details: `Missing: ${missingFields.join(', ')}`,
         availableColumns: availableColumns,
@@ -143,16 +155,16 @@ router.post('/students', adminAuth, upload.fields([
     for (const [index, studentData] of students.entries()) {
       try {
         // Map Excel columns to our schema - handle multiple column name variations
-        
+
         // Handle EnrollmentNo variations
-        let enrollmentNo = studentData.EnrollmentNo || studentData.enrollmentNo || studentData['Enrollment No'] || 
-                          studentData.EnrollMentNo || studentData.enrollMentNo || studentData['Enroll Ment No'];
-        
+        let enrollmentNo = studentData.EnrollmentNo || studentData.enrollmentNo || studentData['Enrollment No'] ||
+          studentData.EnrollMentNo || studentData.enrollMentNo || studentData['Enroll Ment No'];
+
         // If no enrollment number found, generate one from SrNo
         if (!enrollmentNo && studentData.SrNo) {
           enrollmentNo = `STU${String(studentData.SrNo).padStart(6, '0')}`;
         }
-        
+
         // Handle FullName - combine Firstname + Lastname if FullName not available
         let fullName = studentData.FullName || studentData.fullName || studentData['Full Name'] || studentData.Name;
         if (!fullName && (studentData.Firstname || studentData.Lastname)) {
@@ -160,57 +172,57 @@ router.post('/students', adminAuth, upload.fields([
           const lastName = studentData.Lastname || studentData.lastname || studentData['Last Name'] || '';
           fullName = `${firstName} ${lastName}`.trim();
         }
-        
-        const username = studentData.Username || studentData.username || enrollmentNo?.toLowerCase() || 
-                        (studentData.Firstname ? studentData.Firstname.toLowerCase().replace(/\s+/g, '') + studentData.SrNo : null);
+
+        const username = studentData.Username || studentData.username || enrollmentNo?.toLowerCase() ||
+          (studentData.Firstname ? studentData.Firstname.toLowerCase().replace(/\s+/g, '') + studentData.SrNo : null);
         const batchYear = studentData.BatchYear || studentData.batchYear || studentData['Batch Year'] || studentData.Batch_Year;
         const course = studentData.Course || studentData.course;
         const admissionDate = studentData.AdmissionDate || studentData.admissionDate || studentData['Admission Date'];
         const dateOfBirth = studentData.DateOfBirth || studentData.dateOfBirth || studentData['Date Of Birth'];
         const gender = studentData.Gender || studentData.gender;
-        
+
         // Handle EmailId variations
-        const emailId = studentData.EmailID || studentData.emailId || studentData.emailID || 
-                       studentData['Email ID'] || studentData.Email || studentData['Email Id'];
-        
+        const emailId = studentData.EmailID || studentData.emailId || studentData.emailID ||
+          studentData['Email ID'] || studentData.Email || studentData['Email Id'];
+
         let mobileNo = studentData.MobileNo || studentData.mobileNo || studentData['Mobile No'] || studentData.Mobile;
-        
+
         // New fields with variations
-        const aadharNo = studentData.AadharNo || studentData.aadharNo || studentData['Aadhar No'] || 
-                        studentData.Aadhar || studentData.AadhaarNo || studentData.aadhaarNo;
-        const casteCategory = studentData.CasteCategory || studentData.casteCategory || studentData['Caste Category'] || 
-                             studentData.Caste;
+        const aadharNo = studentData.AadharNo || studentData.aadharNo || studentData['Aadhar No'] ||
+          studentData.Aadhar || studentData.AadhaarNo || studentData.aadhaarNo;
+        const casteCategory = studentData.CasteCategory || studentData.casteCategory || studentData['Caste Category'] ||
+          studentData.Caste;
         const fatherName = studentData.FatherName || studentData.fatherName || studentData['Father Name'] || studentData.Father;
         const motherName = studentData.MotherName || studentData.motherName || studentData['Mother Name'] || studentData.Mother;
-        const addressLine1 = studentData.AddressLine1 || studentData.addressLine1 || studentData['Address Line 1'] || 
-                            studentData['Address 1'];
-        const addressLine2 = studentData.AddressLine2 || studentData.addressLine2 || studentData['Address Line 2'] || 
-                            studentData['Address 2'];
+        const addressLine1 = studentData.AddressLine1 || studentData.addressLine1 || studentData['Address Line 1'] ||
+          studentData['Address 1'];
+        const addressLine2 = studentData.AddressLine2 || studentData.addressLine2 || studentData['Address Line 2'] ||
+          studentData['Address 2'];
         const city = studentData.City || studentData.city;
         const state = studentData.State || studentData.state;
         const pincode = studentData.Pincode || studentData.pincode || studentData.PinCode || studentData.PIN;
-        
+
         // Clean mobile number - handle multiple formats and multiple numbers
         if (mobileNo) {
           // Convert to string and handle multiple numbers separated by comma, newline, etc.
           let cleanMobile = String(mobileNo);
-          
+
           // Remove any extra whitespace, newlines, carriage returns
           cleanMobile = cleanMobile.replace(/[\r\n\s,]+/g, ' ').trim();
-          
+
           // Extract first mobile number if multiple are present
           const mobileNumbers = cleanMobile.split(/[,\s]+/);
           cleanMobile = mobileNumbers[0]; // Take the first number
-          
+
           // Remove all non-digits
           cleanMobile = cleanMobile.replace(/\D/g, '');
-          
+
           // Take first 10 digits if longer
           cleanMobile = cleanMobile.substring(0, 10);
-          
+
           mobileNo = cleanMobile;
         }
-        
+
         // Validate mobile number length
         if (!mobileNo || mobileNo.length !== 10 || !/^\d{10}$/.test(mobileNo)) {
           mobileNo = '0000000000'; // Default fallback
@@ -222,7 +234,7 @@ router.post('/students', adminAuth, upload.fields([
           if (!enrollmentNo) missingFields.push('Enrollment Number');
           if (!fullName) missingFields.push('Student Name');
           if (!emailId) missingFields.push('Email Address');
-          
+
           results.failed.push({
             data: studentData,
             error: `Missing required fields: ${missingFields.join(', ')}. Please check row ${index + 2} in your Excel file.`,
@@ -264,10 +276,9 @@ router.post('/students', adminAuth, upload.fields([
         if (existingStudent) {
           results.failed.push({
             data: studentData,
-            error: `Student already exists in row ${index + 2}. Duplicate found: ${
-              existingStudent.enrollmentNo === enrollmentNo ? 'Enrollment Number' :
-              existingStudent.username === username ? 'Username' : 'Email Address'
-            }`,
+            error: `Student already exists in row ${index + 2}. Duplicate found: ${existingStudent.enrollmentNo === enrollmentNo ? 'Enrollment Number' :
+                existingStudent.username === username ? 'Username' : 'Email Address'
+              }`,
             suggestion: 'Each student must have unique enrollment number, username, and email address.'
           });
           continue;
@@ -280,9 +291,9 @@ router.post('/students', adminAuth, upload.fields([
           enrollmentNo: enrollmentNo,
           batchYear: batchYear || '2024',  // Default to current year
           course: course || 'General',     // Default course
-          admissionDate: admissionDate ? new Date(admissionDate) : new Date(),
+          admissionDate: admissionDate ? parseDate(admissionDate) : new Date(),
           fullName: fullName,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('2000-01-01'), // Default DOB
+          dateOfBirth: dateOfBirth ? parseDate(dateOfBirth) : new Date('2000-01-01'),
           gender: gender || 'Other',
           emailId: emailId?.toLowerCase(),
           mobileNo: mobileNo,
@@ -299,7 +310,7 @@ router.post('/students', adminAuth, upload.fields([
         };
 
         const newStudent = new Student(studentObj);
-        
+
         // Validate before saving
         const validationError = newStudent.validateSync();
         if (validationError) {
@@ -310,7 +321,7 @@ router.post('/students', adminAuth, upload.fields([
           });
           continue;
         }
-        
+
         const savedStudent = await newStudent.save();
 
         results.successful.push({
@@ -321,7 +332,76 @@ router.post('/students', adminAuth, upload.fields([
           photo: photoMap[enrollmentNo] ? 'Uploaded' : 'Not found',
           _id: savedStudent._id
         });
-        
+        // Missing required fields
+        if (!enrollmentNo || !fullName || !emailId) {
+          const missingFields = [];
+          if (!enrollmentNo) missingFields.push('Enrollment Number');
+          if (!fullName) missingFields.push('Student Name');
+          if (!emailId) missingFields.push('Email Address');
+          // Debug log for missing required fields
+          console.error('[BulkUpload] Row', index + 2, 'failed due to missing fields:', missingFields, '\nData:', studentData);
+          results.failed.push({
+            data: studentData,
+            error: `Missing required fields: ${missingFields.join(', ')}. Please check row ${index + 2} in your Excel file.`,
+            suggestion: 'Ensure your Excel file has columns for enrollment number (or SrNo), student name (FullName or Firstname), and email address.'
+          });
+          continue;
+        }
+
+        // Invalid email format
+        if (!emailRegex.test(emailId)) {
+          // Debug log for invalid email
+          console.error('[BulkUpload] Row', index + 2, 'failed due to invalid email:', emailId, '\nData:', studentData);
+          results.failed.push({
+            data: studentData,
+            error: `Invalid email format: "${emailId}" in row ${index + 2}. Please use format like: student@example.com`,
+            suggestion: 'Check the email format and ensure it follows standard email conventions.'
+          });
+          continue;
+        }
+
+        // Invalid mobile number
+        if (!mobileNo || mobileNo.length !== 10 || !/^\d{10}$/.test(mobileNo)) {
+          // Debug log for invalid mobile number
+          console.error('[BulkUpload] Row', index + 2, 'failed due to invalid mobile number:', mobileNo, '\nData:', studentData);
+          results.failed.push({
+            data: studentData,
+            error: `Invalid mobile number: "${mobileNo}" in row ${index + 2}. Should be exactly 10 digits.`,
+            suggestion: 'Mobile number should contain only 10 digits without any special characters or country code.'
+          });
+          continue;
+        }
+
+        // Duplicate student
+        if (existingStudent) {
+          // Debug log for duplicate student
+          console.error('[BulkUpload] Row', index + 2, 'failed due to duplicate student:', {
+            enrollmentNo,
+            username,
+            emailId
+          }, '\nExisting:', existingStudent, '\nData:', studentData);
+          results.failed.push({
+            data: studentData,
+            error: `Student already exists in row ${index + 2}. Duplicate found: ${existingStudent.enrollmentNo === enrollmentNo ? 'Enrollment Number' :
+                existingStudent.username === username ? 'Username' : 'Email Address'
+              }`,
+            suggestion: 'Each student must have unique enrollment number, username, and email address.'
+          });
+          continue;
+        }
+
+        // Schema validation error
+        if (validationError) {
+          // Debug log for schema validation error
+          console.error('[BulkUpload] Row', index + 2, 'failed due to schema validation error:', validationError.message, '\nData:', studentData);
+          results.failed.push({
+            data: studentData,
+            error: `Data validation failed for row ${index + 2}: ${validationError.message}`,
+            suggestion: 'Please check the data format and ensure all required fields meet the validation criteria.'
+          });
+          continue;
+        }
+
       } catch (error) {
         results.failed.push({
           data: studentData,
@@ -345,14 +425,14 @@ router.post('/students', adminAuth, upload.fields([
       totalProcessed: results.total,
       results
     };
-    
+
     res.json(responseData);
 
   } catch (error) {
     console.error('Critical error in bulk upload:', error.message);
-    
-    res.status(500).json({ 
-      message: 'Server error during students data upload', 
+
+    res.status(500).json({
+      message: 'Server error during students data upload',
       error: error.message,
       suggestion: 'Please try again. If the problem persists, contact the administrator.',
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
@@ -371,7 +451,7 @@ router.get('/students/template', (req, res) => {
       'BatchYear - Year of admission/batch (e.g., 2024)',
       'Course - Course code or name',
       'AdmissionDate - Date in YYYY-MM-DD format',
-      'FullName - Complete name of the student', 
+      'FullName - Complete name of the student',
       'DateOfBirth - Date in YYYY-MM-DD format',
       'Gender - MALE/FEMALE/Other',
       'EmailID - Valid email address (must be unique)',
@@ -444,16 +524,16 @@ router.get('/students/template', (req, res) => {
       recommendation: 'Use passport-size photos for best results'
     },
     importantNotes: [
-      '✓ Password will be automatically set to EnrollmentNo for new students',
-      '✓ Username will default to EnrollmentNo (lowercase) if not provided',
-      '✓ All optional fields can be left empty - they will have default/null values',
-      '✓ EnrollmentNo, Username, and EmailId must be unique across all students',
-      '✓ Mobile number should be exactly 10 digits',
-      '✓ Dates should be in YYYY-MM-DD format (e.g., 2024-08-15)',
-      '✓ Aadhar number should be 12 digits (if provided)',
-      '✓ Existing students with same EnrollmentNo/Username/Email will be skipped',
-      '✗ Do not include headers in non-English characters',
-      '✗ Do not merge cells or use complex formatting in Excel'
+      'âœ“ Password will be automatically set to EnrollmentNo for new students',
+      'âœ“ Username will default to EnrollmentNo (lowercase) if not provided',
+      'âœ“ All optional fields can be left empty - they will have default/null values',
+      'âœ“ EnrollmentNo, Username, and EmailId must be unique across all students',
+      'âœ“ Mobile number should be exactly 10 digits',
+      'âœ“ Dates should be in YYYY-MM-DD format (e.g., 2024-08-15)',
+      'âœ“ Aadhar number should be 12 digits (if provided)',
+      'âœ“ Existing students with same EnrollmentNo/Username/Email will be skipped',
+      'âœ— Do not include headers in non-English characters',
+      'âœ— Do not merge cells or use complex formatting in Excel'
     ],
     validationRules: {
       EnrollmentNo: 'Required, must be unique, alphanumeric',
@@ -486,7 +566,7 @@ router.get('/students/template', (req, res) => {
 router.get('/students/download-template', (req, res) => {
   try {
     const XLSX = require('xlsx');
-    
+
     // Template headers
     const headers = [
       'SrNo', 'EnrollmentNo', 'BatchYear', 'Course', 'AdmissionDate',
@@ -545,15 +625,15 @@ router.get('/students/download-template', (req, res) => {
 
     // Create workbook
     const workbook = XLSX.utils.book_new();
-    
+
     // Add instructions sheet
     const instructionSheet = XLSX.utils.json_to_sheet(instructions);
     XLSX.utils.book_append_sheet(workbook, instructionSheet, 'Instructions');
-    
+
     // Add sample data sheet
     const sampleSheet = XLSX.utils.json_to_sheet(sampleData);
     XLSX.utils.book_append_sheet(workbook, sampleSheet, 'Sample Data');
-    
+
     // Add empty template sheet with just headers
     const templateData = [{}];
     const templateSheet = XLSX.utils.json_to_sheet(templateData, { header: headers });
@@ -565,7 +645,7 @@ router.get('/students/download-template', (req, res) => {
     // Set headers for file download
     res.setHeader('Content-Disposition', 'attachment; filename=Student_Bulk_Upload_Template.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    
+
     res.send(buffer);
   } catch (error) {
     console.error('Error generating template:', error);
@@ -578,7 +658,7 @@ router.get('/students/all', adminAuth, async (req, res) => {
   try {
     const students = await Student.find({})
       .sort({ enrollmentNo: 1 });
-    
+
     // Map the fields to match frontend expectations while keeping all data for editing
     const mappedStudents = students.map(student => ({
       _id: student._id,
@@ -607,10 +687,10 @@ router.get('/students/all', adminAuth, async (req, res) => {
       state: student.state,
       pincode: student.pincode
     }));
-    
-    res.json({ 
+
+    res.json({
       students: mappedStudents,
-      total: mappedStudents.length 
+      total: mappedStudents.length
     });
   } catch (error) {
     console.error('Error getting students:', error);
@@ -639,7 +719,7 @@ router.get('/students/export', adminAuth, async (req, res) => {
     // Create workbook and worksheet
     const XLSX = require('xlsx');
     const workbook = XLSX.utils.book_new();
-    
+
     // Prepare data for Excel
     const excelData = students.map(student => ({
       'Name': student.fullName,
@@ -660,7 +740,7 @@ router.get('/students/export', adminAuth, async (req, res) => {
     // Set headers for file download
     res.setHeader('Content-Disposition', 'attachment; filename=students_data.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    
+
     res.send(buffer);
   } catch (error) {
     console.error('Error exporting students:', error);
@@ -682,16 +762,16 @@ router.put('/students/:id', adminAuth, async (req, res) => {
     const updatedStudent = await Student.findByIdAndUpdate(
       id,
       updateData,
-      { 
+      {
         new: true,
         runValidators: true
       }
     );
 
     if (!updatedStudent) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Student not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
       });
     }
 
@@ -702,10 +782,10 @@ router.put('/students/:id', adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating student:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Error updating student',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -718,9 +798,9 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
     // First, check if student exists
     const student = await Student.findById(id);
     if (!student) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Student not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
       });
     }
 
@@ -776,10 +856,10 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error deleting student and associated data:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Error deleting student and associated data',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -792,9 +872,9 @@ router.get('/students/:id', adminAuth, async (req, res) => {
     const student = await Student.findById(id);
 
     if (!student) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Student not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
       });
     }
 
@@ -804,10 +884,10 @@ router.get('/students/:id', adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching student:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Error fetching student',
-      error: error.message 
+      error: error.message
     });
   }
 });

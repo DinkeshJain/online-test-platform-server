@@ -399,10 +399,13 @@ router.get('/:id', auth, async (req, res) => {
     }
 
     // Check if student has already submitted this test
+    // Check if student has already submitted this test
     const Submission = require('../models/Submission');
     const existingSubmission = await Submission.findOne({
       testId: test._id,
-      userId: req.user._id
+      userId: req.user._id,
+      isDraft: false,
+      isCompleted: true
     });
 
     if (existingSubmission) {
