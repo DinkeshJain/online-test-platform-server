@@ -24,6 +24,15 @@ const testSchema = new mongoose.Schema({
     ref: 'Course',
     required: true
   },
+  courseCode: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
+  courseName: {
+    type: String,
+    trim: true
+  },
   subject: {
     subjectCode: {
       type: String,
@@ -65,7 +74,7 @@ const testSchema = new mongoose.Schema({
   },
   testType: {
     type: String,
-    enum: ['demo', 'official'],
+    enum: ['demo', 'official', 'practice'],
     default: 'official',
     required: true
   }

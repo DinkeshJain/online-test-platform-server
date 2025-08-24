@@ -337,8 +337,6 @@ router.get('/', auth, async (req, res) => {
       }
 
       const allTests = await Test.find({ course: studentCourse._id })
-        .populate('createdBy', 'name')
-        .populate('course', 'courseCode courseName')
         .sort({ createdAt: -1 });
 
       // Filter to only show tests that are currently active
@@ -346,8 +344,6 @@ router.get('/', auth, async (req, res) => {
     } else {
       // Admin can see all tests
       tests = await Test.find()
-        .populate('createdBy', 'name')
-        .populate('course', 'courseCode courseName')
         .sort({ createdAt: -1 });
     }
 
@@ -358,15 +354,37 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+
 // Get all tests for admin (including inactive ones)
 router.get('/admin', adminAuth, async (req, res) => {
   try {
+    console.log('🎯 GET /tests/admin endpoint called');
+
+    // Test basic query first
+    const testCount = await Test.countDocuments();
+    console.log('📊 Total tests in database:', testCount);
+    
     const tests = await Test.find()
-      .populate('createdBy', 'name')
-      .populate('course', 'courseName courseCode')
+      .select('-createdBy') // Exclude createdBy field
       .sort({ createdAt: -1 });
 
-    res.json({ tests });
+    console.log('📋 Tests found:', tests.length);
+    if (tests.length > 0) {
+      console.log('📝 Sample test data:', {
+        id: tests[0]._id,
+        courseCode: tests[0].courseCode,
+        courseName: tests[0].courseName,
+        subjectCode: tests[0].subject?.subjectCode,
+        subjectName: tests[0].subject?.subjectName,
+        questionsCount: tests[0].questions?.length
+      });
+    }
+
+    console.log('📤 Sending response with tests array length:', tests.length);
+    const response = { tests };
+    console.log('📦 Response structure:', Object.keys(response));
+    
+    res.json(response);
   } catch (error) {
     console.error('Get admin tests error:', error);
     res.status(500).json({ message: 'Server error while fetching tests' });
@@ -376,8 +394,7 @@ router.get('/admin', adminAuth, async (req, res) => {
 // Get a specific test by ID (for taking the test)
 router.get('/:id', auth, async (req, res) => {
   try {
-    const test = await Test.findById(req.params.id)
-      .populate('createdBy', 'name');
+    const test = await Test.findById(req.params.id);
 
     if (!test) {
       return res.status(404).json({ message: 'Test not found' });
@@ -500,9 +517,7 @@ if (shuffledAllQuestions.length >= 70) {
 // Get a specific test by ID for editing (Admin only)
 router.get('/:id/edit', adminAuth, async (req, res) => {
   try {
-    const test = await Test.findById(req.params.id)
-      .populate('createdBy', 'name')
-      .populate('course', 'courseCode courseName');
+    const test = await Test.findById(req.params.id);
 
     if (!test) {
       return res.status(404).json({ message: 'Test not found' });

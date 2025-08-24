@@ -55,6 +55,7 @@ router.post('/register/admin', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+    console.log('🔐 Login attempt for username:', username);
 
     // First try to find admin
     let user = await Admin.findOne({ username });
@@ -73,21 +74,34 @@ router.post('/login', async (req, res) => {
     }
 
     if (!user) {
+      console.log('❌ User not found for username:', username);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
+
+    console.log('✅ User found:', user.username, 'Type:', userType);
 
     // Check password
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
+      console.log('❌ Password mismatch for user:', username);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    console.log('✅ Password matched for user:', username);
+
     // Generate JWT token
+    const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
+    console.log('🔑 JWT Secret being used:', jwtSecret ? 'SET' : 'NOT SET');
+    
     const token = jwt.sign(
       { id: user._id, userType: userType },
-      process.env.JWT_SECRET || 'fallback_secret',
+      jwtSecret,
       { expiresIn: '7d' }
     );
+
+    console.log('🎫 Token generated successfully for user:', username);
+    console.log('🎫 Token length:', token.length);
+    console.log('🎫 Token starts with:', token.substring(0, 20) + '...');
 
     // Prepare user response based on type
     let userResponse;

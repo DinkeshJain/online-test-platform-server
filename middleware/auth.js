@@ -45,24 +45,59 @@ const auth = async (req, res, next) => {
 };
 
 const adminAuth = async (req, res, next) => {
-  console.log('\n🔐 ADMIN AUTH MIDDLEWARE');
-  console.log('Authorization header:', req.headers.authorization ? 'Present' : 'Missing');
-  
   try {
-    await auth(req, res, () => {
-      console.log('👤 User authenticated:', req.user ? req.user.username : 'No user');
-      console.log('🏷️ User type:', req.userType);
-      
-      if (req.userType !== 'admin') {
-        console.log('❌ Access denied: User is not admin');
-        return res.status(403).json({ message: 'Access denied. Admin role required.' });
-      }
-      console.log('✅ Admin access granted');
-      next();
-    });
+    console.log('🔐 ADMIN AUTH MIDDLEWARE');
+    const authHeader = req.header('Authorization');
+    console.log('📋 Authorization Header:', authHeader);
+    
+    if (!authHeader) {
+      console.log('❌ No Authorization header');
+      return res.status(401).json({ message: 'No token, authorization denied' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log('🎫 Extracted token:', token ? token.substring(0, 20) + '...' : 'EMPTY');
+    console.log('🎫 Token length:', token.length);
+
+    if (!token) {
+      console.log('❌ No token after Bearer extraction');
+      return res.status(401).json({ message: 'No token, authorization denied' });
+    }
+
+    const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
+    console.log('🔑 JWT Secret for verification:', jwtSecret ? 'SET' : 'NOT SET');
+    
+    const decoded = jwt.verify(token, jwtSecret);
+    console.log('✅ Token decoded successfully:', decoded);
+    
+    // Try to find user in Admin collection first
+    let user = await Admin.findById(decoded.id).select('-password');
+    if (user) {
+      req.user = { ...user.toObject(), role: 'admin' };
+      req.userType = 'admin';
+      return next();
+    }
+    
+    // Try Evaluator collection next
+    user = await Evaluator.findById(decoded.id).select('-password').populate('assignedCourses', 'courseCode courseName');
+    if (user) {
+      req.user = { ...user.toObject(), role: 'evaluator' };
+      req.userType = 'evaluator';
+      return next();
+    }
+    
+    // If not found in Admin or Evaluator, try Student collection
+    user = await Student.findById(decoded.id).select('-password');
+    if (user) {
+      req.user = { ...user.toObject(), role: 'student' };
+      req.userType = 'student';
+      return next();
+    }
+    
+    return res.status(401).json({ message: 'Token is not valid' });
   } catch (error) {
-    console.error('❌ Admin auth failed:', error.message);
-    res.status(401).json({ message: 'Authorization failed' });
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ message: 'Token is not valid' });
   }
 };
 

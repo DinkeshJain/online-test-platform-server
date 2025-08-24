@@ -39,14 +39,13 @@ const submissionSchema = new mongoose.Schema({
     ref: 'Student',
     required: true
   },
-  // FIXED: Changed course field from ObjectId to String to match Student.course
   enrollmentNo: {
     type: String,
     required: true,
     index: true
   },
   course: {
-    type: String,  // FIXED: Changed from ObjectId to String
+    type: String,
     required: true,
     index: true,
     trim: true
@@ -82,7 +81,6 @@ const submissionSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  // Progress tracking fields
   isDraft: {
     type: Boolean,
     default: false
