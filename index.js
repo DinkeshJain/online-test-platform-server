@@ -9,21 +9,47 @@ const app = express();
 const Test = require('./models/Test');
 
 app.use(cors({
-  origin: [
-    // Local development
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
     
-    // Production HTTPS domains
-    'https://anuadmin.bah.in',
-    'https://anuevaluator.bah.in',
-    'https://anustudent.bah.in',
+    const allowedOrigins = [
+      // Local development
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175',
+      
+      // Production HTTPS domains
+      'https://anuadmin.bah.in',
+      'https://anuevaluator.bah.in',
+      'https://anustudent.bah.in',
 
-    'http://anuadmin.bah.in',
-    'http://anuevaluator.bah.in',
-    'http://anustudent.bah.in',
-  ],
+      'http://anuadmin.bah.in',
+      'http://anuevaluator.bah.in',
+      'http://anustudent.bah.in',
+      
+      // Add common deployment platforms
+      'https://vercel.app',
+      'https://netlify.app',
+      'https://onrender.com'
+    ];
+    
+    // Check if origin is in allowed list or is a subdomain of allowed platforms
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      return origin === allowedOrigin || 
+             origin.endsWith('.vercel.app') || 
+             origin.endsWith('.netlify.app') || 
+             origin.endsWith('.onrender.com') ||
+             origin.endsWith('.bah.in');
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -52,14 +78,21 @@ app.options('*', (req, res) => {
     'http://anuadmin.bah.in', 'http://anuevaluator.bah.in', 'http://anustudent.bah.in'
   ];
   
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
+  // Check if origin is allowed or is from common platforms
+  const isAllowed = allowedOrigins.includes(origin) || 
+                   (origin && (origin.endsWith('.vercel.app') || 
+                              origin.endsWith('.netlify.app') || 
+                              origin.endsWith('.onrender.com') ||
+                              origin.endsWith('.bah.in')));
+  
+  if (isAllowed || !origin) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400'); // 24 hours
   }
   
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // 24 hours
   res.sendStatus(200);
 });
 

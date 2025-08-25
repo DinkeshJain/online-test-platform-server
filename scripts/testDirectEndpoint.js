@@ -4,14 +4,17 @@ async function testAdminEndpoint() {
   try {
     console.log('🔍 Testing /tests/admin endpoint...');
     
+    // Use environment variable for API URL, fallback to localhost for development
+    const API_URL = process.env.API_URL || 'http://localhost:5000';
+    
     // Test the endpoint directly (without auth for now to see raw response)
-    const response = await axios.get('http://localhost:5000/tests/admin', {
+    const response = await axios.get(`${API_URL}/tests/admin`, {
       headers: {
         'Authorization': 'Bearer fake-token-for-testing' // This might fail auth but let's see what happens
       }
     }).catch(error => {
       console.log('❌ Auth failed, trying without token...');
-      return axios.get('http://localhost:5000/tests/admin').catch(authError => {
+      return axios.get(`${API_URL}/tests/admin`).catch(authError => {
         console.log('❌ Endpoint failed:', authError.response?.status, authError.response?.data?.message);
         return null;
       });

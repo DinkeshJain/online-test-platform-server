@@ -4,8 +4,11 @@ async function testApiResponse() {
   try {
     console.log('🔍 Testing actual API response...');
     
+    // Use environment variable for API URL, fallback to localhost for development
+    const API_URL = process.env.API_URL || 'http://localhost:5000';
+    
     // Simulate admin login to get token
-    const loginResponse = await axios.post('http://localhost:5000/auth/admin/login', {
+    const loginResponse = await axios.post(`${API_URL}/auth/admin/login`, {
       email: 'admin@test.com', // Replace with actual admin credentials
       password: 'admin123'     // Replace with actual admin password
     }).catch(error => {
@@ -19,7 +22,7 @@ async function testApiResponse() {
     }
 
     // Test the API endpoint
-    const response = await axios.get('http://localhost:5000/tests/admin', { headers });
+    const response = await axios.get(`${API_URL}/tests/admin`, { headers });
     
     console.log('\n📊 API Response Summary:');
     console.log('Total tests returned:', response.data.tests.length);

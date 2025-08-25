@@ -4,8 +4,11 @@ async function testMaintenanceEndpoint() {
   try {
     console.log('🔍 Testing maintenance endpoint...');
     
+    // Use environment variable for API URL, fallback to localhost for development
+    const API_URL = process.env.API_URL || 'http://localhost:5000';
+    
     // Test without auth first to see the error response
-    const response = await axios.get('http://localhost:5000/api/maintenance/quick-check');
+    const response = await axios.get(`${API_URL}/api/maintenance/quick-check`);
     console.log('✅ Response:', response.data);
   } catch (error) {
     console.error('❌ Error:', error.response?.data || error.message);
