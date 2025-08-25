@@ -59,72 +59,40 @@ router.post('/auto-save', auth, async (req, res) => {
       return res.status(400).json({ message: 'Test already submitted' });
     }
 
-    // ✅ CRITICAL FIX: Process answers for auto-save with proper validation and debugging
+    // ✅ FIXED: Process answers for auto-save with proper originalQuestionNumber
     const processedAnswers = [];
-    console.log('🔍 AUTO-SAVE: Processing answers:', answers);
-    console.log('🔍 AUTO-SAVE: Answers type:', typeof answers);
-    console.log('🔍 AUTO-SAVE: Answers keys count:', answers ? Object.keys(answers).length : 0);
+    console.log(`Auto-save: Processing ${Object.keys(answers || {}).length} answers`);
     
     if (answers && typeof answers === 'object') {
       for (const [questionId, selectedAnswer] of Object.entries(answers)) {
-        console.log(`🔍 Processing questionId: ${questionId}, selectedAnswer: ${selectedAnswer}, type: ${typeof selectedAnswer}`);
-        
-        // ✅ CRITICAL: Allow 0 as valid answer, handle type conversion
         if (selectedAnswer !== null && selectedAnswer !== undefined) {
-          // Convert to number and validate
-          const answerNum = parseInt(selectedAnswer);
-          
-          if (!isNaN(answerNum) && answerNum >= 0 && answerNum <= 3) {
-            // Try multiple ways to find the question
-            let question = test.questions.id(questionId);
-            if (!question) {
-              question = test.questions.find(q => q._id.toString() === questionId);
-            }
-            
-            console.log(`🔍 Question found for ${questionId}: ${question ? 'YES' : 'NO'}`);
-            
-            if (!question) {
-              console.error(`❌ Question not found for ID: ${questionId}`);
-              continue; // Skip this answer but continue processing others
-            }
-            
-            let isCorrect = false;
-            if (question) {
-              // ✅ CRITICAL: Compare numbers with numbers
-              isCorrect = question.correctAnswer === answerNum;
-              console.log(`🔍 Question ${questionId}: correctAnswer=${question.correctAnswer}, selectedAnswer=${answerNum}, isCorrect=${isCorrect}`);
-            }
+          const question = test.questions.id(questionId);
+          let isCorrect = false;
 
-            // ✅ FIXED: Calculate proper original question number
-            let originalQuestionNumber = 1;
-            if (question) {
-              const questionIndex = test.questions.findIndex(q => q._id.toString() === questionId);
-              if (questionIndex !== -1) {
-                originalQuestionNumber = questionIndex + 1;
-              }
-              console.log(`🔍 Original question number: ${originalQuestionNumber}`);
-            }
-
-            processedAnswers.push({
-              questionId,
-              selectedAnswer: answerNum, // ✅ Store as number
-              isCorrect,
-              originalQuestionNumber,
-              shuffledPosition: processedAnswers.length + 1,
-              shuffledToOriginal: question?.shuffledToOriginal || []
-            });
-            
-            console.log(`✅ Answer saved: Q${originalQuestionNumber} -> ${answerNum} (${isCorrect ? 'CORRECT' : 'INCORRECT'})`);
-          } else {
-            console.log(`❌ Invalid answer value: ${selectedAnswer} (${typeof selectedAnswer}) - not in range 0-3`);
+          if (question && selectedAnswer !== null && selectedAnswer !== undefined) {
+            isCorrect = question.correctAnswer === selectedAnswer;
           }
-        } else {
-          console.log(`⚠️ Skipping questionId ${questionId} - null/undefined answer`);
+
+          // ✅ FIXED: Calculate proper original question number
+          let originalQuestionNumber = 1;
+          if (question) {
+            const questionIndex = test.questions.findIndex(q => q._id.toString() === questionId);
+            originalQuestionNumber = question.originalQuestionNumber || question.questionNumber || (questionIndex + 1);
+          }
+
+          processedAnswers.push({
+            questionId,
+            selectedAnswer,
+            isCorrect,
+            originalQuestionNumber, // ✅ NOW USES CORRECT VALUE
+            shuffledPosition: processedAnswers.length + 1,
+            shuffledToOriginal: question?.shuffledToOriginal || []
+          });
+          
+          console.log(`Auto-save: Processed answer for question ${originalQuestionNumber}, selected: ${selectedAnswer}`);
         }
       }
     }
-    
-    console.log(`✅ PROCESSED ${processedAnswers.length} answers out of ${answers ? Object.keys(answers).length : 0} total`);
 
     // Calculate current score
     const currentScore = processedAnswers.filter(answer => answer.isCorrect).length;
@@ -391,35 +359,121 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // ✅ ENHANCED: Log submission details for debugging
-    console.log(`Submission received:`, {
-      userId: req.user.enrollmentNo,
-      testId,
-      totalQuestions: totalQuestions || test.questions.length,
-      answeredQuestions: answeredQuestions || answers.length,
-      unansweredQuestions: unansweredQuestions || (test.questions.length - answers.length),
-      isAutoSubmitted: proctoring?.isAutoSubmitted || false,
-      violations: proctoring?.totalViolations || 0
+    // ✅ ENHANCED: Log submission details with comprehensive analysis
+    console.log(`=== SUBMISSION ANALYSIS ===`);
+    console.log(`Student: ${req.user.enrollmentNo}`);
+    console.log(`Test: ${testId}`);
+    console.log(`Submitted at: ${new Date().toISOString()}`);
+
+    // Analyze the answers array
+    const answerAnalysis = {
+      total: answers.length,
+      valid: 0,
+      null: 0,
+      undefined: 0,
+      invalid: 0,
+      sampleData: []
+    };
+
+    answers.forEach((answer, index) => {
+      if (answer.selectedAnswer === null) {
+        answerAnalysis.null++;
+      } else if (answer.selectedAnswer === undefined) {
+        answerAnalysis.undefined++;
+      } else if (typeof answer.selectedAnswer === 'number' && answer.selectedAnswer >= 0 && answer.selectedAnswer <= 3) {
+        answerAnalysis.valid++;
+      } else {
+        answerAnalysis.invalid++;
+      }
+      
+      // Sample first 3 answers for analysis
+      if (index < 3) {
+        answerAnalysis.sampleData.push({
+          index,
+          questionId: answer.questionId,
+          selectedAnswer: answer.selectedAnswer,
+          type: typeof answer.selectedAnswer,
+          originalQuestionNumber: answer.originalQuestionNumber
+        });
+      }
     });
 
-    // Calculate score only for answered questions
+    console.log(`Answer Analysis:`, answerAnalysis);
+
+    // Alert if critical issue detected
+    if (answerAnalysis.null > 0 || answerAnalysis.undefined > 0) {
+      console.error(`🚨 CRITICAL ISSUE DETECTED for ${req.user.enrollmentNo}:`, {
+        nullAnswers: answerAnalysis.null,
+        undefinedAnswers: answerAnalysis.undefined,
+        validAnswers: answerAnalysis.valid,
+        issuePercentage: (((answerAnalysis.null + answerAnalysis.undefined) / answerAnalysis.total) * 100).toFixed(1)
+      });
+    }
+
+    console.log(`=============================`);
+
+    // ✅ CRITICAL: Validate and filter answers to prevent null selectedAnswers
+    const validatedAnswers = [];
+    const rejectedAnswers = [];
+
+    answers.forEach((answer, index) => {
+      const isValidSelectedAnswer = (
+        answer.selectedAnswer !== null && 
+        answer.selectedAnswer !== undefined && 
+        typeof answer.selectedAnswer === 'number' && 
+        answer.selectedAnswer >= 0 && 
+        answer.selectedAnswer <= 3 && 
+        Number.isInteger(answer.selectedAnswer)
+      );
+      
+      if (isValidSelectedAnswer) {
+        validatedAnswers.push(answer);
+      } else {
+        rejectedAnswers.push({
+          ...answer,
+          rejectionReason: 'Invalid selectedAnswer value',
+          originalValue: answer.selectedAnswer,
+          index
+        });
+      }
+    });
+
+    // Log rejected answers for monitoring
+    if (rejectedAnswers.length > 0) {
+      console.error(`🚨 CRITICAL: User ${req.user.enrollmentNo} submitted ${rejectedAnswers.length} invalid answers:`, {
+        testId,
+        userId: req.user.enrollmentNo,
+        rejectedCount: rejectedAnswers.length,
+        totalSubmitted: answers.length,
+        validCount: validatedAnswers.length,
+        sampleRejected: rejectedAnswers.slice(0, 3),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Calculate score only for validated answered questions
     let score = 0;
-    const processedAnswers = answers.map((answer, index) => {
+    const processedAnswers = validatedAnswers.map((answer, index) => {
       const question = test.questions.id(answer.questionId);
 
       let isCorrect = false;
-      if (question && answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal)) {
+      
+      // ✅ FIXED: Handle null selectedAnswer gracefully
+      if (answer.selectedAnswer === null || answer.selectedAnswer === undefined) {
+        console.warn(`Null selectedAnswer for question ${answer.questionId} from ${req.user.enrollmentNo}`);
+        isCorrect = false; // Null answers are incorrect
+      } else if (question && answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal)) {
         const selectedOriginalIndex = answer.shuffledToOriginal[answer.selectedAnswer];
         isCorrect = selectedOriginalIndex === question.correctAnswer;
-      } else {
-        isCorrect = question && question.correctAnswer === answer.selectedAnswer;
+      } else if (question) {
+        isCorrect = question.correctAnswer === answer.selectedAnswer;
       }
 
       if (isCorrect) score++;
 
       return {
         questionId: answer.questionId,
-        selectedAnswer: answer.selectedAnswer,
+        selectedAnswer: answer.selectedAnswer, // Keep as-is even if null for debugging
         isCorrect,
         originalQuestionNumber: answer.originalQuestionNumber || (index + 1),
         shuffledPosition: index + 1,
@@ -443,8 +497,8 @@ router.post('/', auth, async (req, res) => {
       answers: processedAnswers,
       score,
       totalQuestions: totalQuestions || test.questions.length,
-      answeredQuestions: answeredQuestions || answers.length, // ✅ Track answered count
-      unansweredQuestions: unansweredQuestions || (test.questions.length - answers.length), // ✅ Track unanswered count
+      answeredQuestions: validatedAnswers.length, // ✅ Use validated count
+      unansweredQuestions: (totalQuestions || test.questions.length) - validatedAnswers.length, // ✅ Calculate from validated
       timeSpent: timeSpent || 0,
       testStartedAt: studentTestStartTime,
       submittedAt: submissionTime, // ✅ Set submission timestamp
@@ -1776,6 +1830,102 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
       message: 'Error getting attendance data',
       error: error.message
     });
+  }
+});
+
+// ✅ SAFE HOT-FIX: Monitoring endpoints (safe to deploy during exam)
+router.get('/monitor/null-answers-live', adminAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const last2Hours = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    
+    const recentSubmissions = await Submission.find({
+      submittedAt: { $gte: last2Hours },
+      isDraft: false,
+      isCompleted: true
+    }).populate('testId', 'subject');
+    
+    const issueStats = {
+      timeWindow: '2 hours',
+      total: recentSubmissions.length,
+      withNullIssues: 0,
+      affectedStudents: [],
+      issueRate: 0
+    };
+    
+    recentSubmissions.forEach(submission => {
+      const nullCount = submission.answers?.filter(a => 
+        a.selectedAnswer === null || a.selectedAnswer === undefined
+      ).length || 0;
+      
+      if (nullCount > 0) {
+        issueStats.withNullIssues++;
+        issueStats.affectedStudents.push({
+          enrollmentNo: submission.enrollmentNo,
+          testSubject: submission.testId?.subject?.subjectCode,
+          nullCount,
+          totalAnswers: submission.answers?.length || 0,
+          submittedAt: submission.submittedAt,
+          issuePercentage: ((nullCount / (submission.answers?.length || 1)) * 100).toFixed(1)
+        });
+      }
+    });
+    
+    issueStats.issueRate = ((issueStats.withNullIssues / issueStats.total) * 100).toFixed(2);
+    
+    res.json(issueStats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/dashboard/issue-summary', adminAuth, async (req, res) => {
+  try {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
+    const todaySubmissions = await Submission.find({
+      submittedAt: { $gte: startOfDay },
+      isDraft: false,
+      isCompleted: true
+    });
+    
+    const summary = {
+      date: startOfDay.toISOString().split('T')[0],
+      totalSubmissions: todaySubmissions.length,
+      issuesDetected: 0,
+      criticalIssues: 0,
+      affectedStudents: []
+    };
+    
+    todaySubmissions.forEach(submission => {
+      const nullCount = submission.answers?.filter(a => 
+        a.selectedAnswer === null || a.selectedAnswer === undefined
+      ).length || 0;
+      
+      if (nullCount > 0) {
+        summary.issuesDetected++;
+        
+        const issuePercentage = (nullCount / (submission.answers?.length || 1)) * 100;
+        if (issuePercentage > 50) {
+          summary.criticalIssues++;
+        }
+        
+        summary.affectedStudents.push({
+          enrollmentNo: submission.enrollmentNo,
+          nullCount,
+          totalAnswers: submission.answers?.length || 0,
+          issuePercentage: issuePercentage.toFixed(1),
+          submittedAt: submission.submittedAt
+        });
+      }
+    });
+    
+    summary.issueRate = ((summary.issuesDetected / summary.totalSubmissions) * 100).toFixed(2);
+    
+    res.json(summary);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
