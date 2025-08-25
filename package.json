@@ -8,7 +8,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "cleanup:check": "node scripts/cleanup-data.js --check",
     "cleanup:dry": "node scripts/cleanup-data.js --cleanup-dry",
-    "cleanup:execute": "node scripts/cleanup-data.js --cleanup"
+    "cleanup:execute": "node scripts/cleanup-data.js --cleanup",
+    "migration:testtype:dry": "node scripts/add-testtype-to-submissions.js --dry-run",
+    "migration:testtype:execute": "node scripts/add-testtype-to-submissions.js --execute"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,7 @@
 const express = require('express');
 const Test = require('../models/Test');
 const Submission = require('../models/Submission');
+const Student = require('../models/Student');
 const InternalMarks = require('../models/InternalMarks');
 const { auth, adminAuth, adminOrEvaluatorAuth } = require('../middleware/auth');
 
@@ -837,31 +838,388 @@ router.post('/release-results/:courseId', adminAuth, async (req, res) => {
 // Add timezone utility at the top
 const TimezoneUtils = require('../utils/timezone');
 
+// Get distinct submission dates for the attendance filter
+router.get('/attendance/dates', adminAuth, async (req, res) => {
+  try {
+    // Get distinct submission dates from completed submissions
+    const submissionDates = await Submission.aggregate([
+      {
+        $match: {
+          isDraft: false,
+          isCompleted: true,
+          submittedAt: { $exists: true }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$submittedAt"
+            }
+          },
+          count: { $sum: 1 },
+          testTypes: { $addToSet: "$testType" }
+        }
+      },
+      {
+        $sort: { _id: -1 }
+      },
+      {
+        $project: {
+          date: "$_id",
+          count: 1,
+          testTypes: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    res.json({
+      dates: submissionDates
+    });
+
+  } catch (error) {
+    console.error('Error fetching submission dates:', error);
+    res.status(500).json({
+      message: 'Server error while fetching submission dates',
+      error: error.message
+    });
+  }
+});
+
+// Get test types for a specific date
+router.get('/attendance/test-types/:date', adminAuth, async (req, res) => {
+  try {
+    const { date } = req.params;
+    
+    // Parse date and create range for the day
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
+
+    const testTypes = await Submission.aggregate([
+      {
+        $match: {
+          isDraft: false,
+          isCompleted: true,
+          submittedAt: {
+            $gte: startDate,
+            $lte: endDate
+          }
+        }
+      },
+      {
+        $group: {
+          _id: "$testType",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      },
+      {
+        $project: {
+          testType: "$_id",
+          count: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    res.json({
+      testTypes: testTypes
+    });
+
+  } catch (error) {
+    console.error('Error fetching test types:', error);
+    res.status(500).json({
+      message: 'Server error while fetching test types',
+      error: error.message
+    });
+  }
+});
+
+// New attendance route with date and testType filtering
+router.get('/attendance/data', adminAuth, async (req, res) => {
+  try {
+    const { 
+      date,
+      testType,
+      course: selectedCourse,
+      status: selectedStatus,
+      page = 1, 
+      limit = 50,
+      search = ''
+    } = req.query;
+
+    console.log('📊 New Attendance API called:', { date, testType, selectedCourse, selectedStatus, page, limit, search });
+
+    // Validate required parameters
+    if (!date || !testType) {
+      return res.status(400).json({ 
+        message: 'Date and testType are required parameters' 
+      });
+    }
+
+    // Parse date and create range for the day
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
+
+    console.log('📅 Date range:', { startDate, endDate });
+
+    // Build submission query
+    let submissionQuery = {
+      isDraft: false,
+      isCompleted: true,
+      testType: testType,
+      submittedAt: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    };
+
+    // Add course filter if specified
+    if (selectedCourse && selectedCourse !== 'all') {
+      submissionQuery.course = selectedCourse;
+    }
+
+    console.log('🔍 Submission query:', submissionQuery);
+
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get submissions with populated data
+    let submissionsQuery = Submission.find(submissionQuery)
+      .populate('userId', 'fullName enrollmentNo course')
+      .populate('testId', 'subject testType course duration questions')
+      .sort({ enrollmentNo: 1, 'testId.subject.subjectCode': 1 });
+
+    // Apply search filter if provided
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      // Add search to the original query instead of using where
+      submissionQuery.$or = [
+        { enrollmentNo: searchRegex }
+      ];
+      submissionsQuery = Submission.find(submissionQuery)
+        .populate('userId', 'fullName enrollmentNo course')
+        .populate('testId', 'subject testType course duration questions')
+        .sort({ enrollmentNo: 1, 'testId.subject.subjectCode': 1 });
+    }
+
+    // Get total count before pagination
+    const totalSubmissions = await Submission.countDocuments(submissionQuery);
+    console.log('📊 Total submissions found:', totalSubmissions);
+
+    // Apply pagination
+    const submissions = await submissionsQuery
+      .skip(skip)
+      .limit(limitNum);
+
+    console.log('📋 Submissions for current page:', submissions.length);
+
+    // Transform submissions into the expected format
+    const attendanceData = submissions.map(submission => {
+      const student = submission.userId;
+      const test = submission.testId;
+      
+      return {
+        student: {
+          _id: student._id,
+          name: student.fullName,
+          enrollmentNumber: student.enrollmentNo,
+          course: student.course
+        },
+        subject: test?.subject ? {
+          code: test.subject.subjectCode,
+          name: test.subject.subjectName
+        } : null,
+        testType: submission.testType,
+        submission: {
+          _id: submission._id,
+          score: submission.score,
+          totalQuestions: submission.totalQuestions,
+          answeredQuestions: submission.answeredQuestions || submission.answers?.length || 0,
+          timeSpent: submission.timeSpent,
+          testStartedAt: submission.testStartedAt,
+          lastSavedAt: submission.lastSavedAt,
+          submittedAt: submission.submittedAt
+        }
+      };
+    });
+
+    // Apply status filtering if specified
+    let filteredData = attendanceData;
+    if (selectedStatus && selectedStatus !== 'all') {
+      if (selectedStatus === 'Finished') {
+        // Already filtered by having submissions
+        filteredData = attendanceData;
+      } else if (selectedStatus === 'Absent') {
+        // For absent students, we need to find students who didn't submit
+        // This is more complex with the submission-based approach
+        // We'll need to get all students and subtract those who submitted
+        filteredData = []; // For now, empty as we're showing submissions
+      }
+    }
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalSubmissions / limitNum);
+
+    // Get subjects and courses for filters
+    const allSubmissions = await Submission.find({
+      isDraft: false,
+      isCompleted: true,
+      testType: testType,
+      submittedAt: { $gte: startDate, $lte: endDate }
+    }).populate('testId', 'subject').limit(100);
+
+    const subjects = [...new Set(allSubmissions.map(sub => 
+      sub.testId?.subject?.subjectCode
+    ).filter(Boolean))].map(code => {
+      const submission = allSubmissions.find(sub => 
+        sub.testId?.subject?.subjectCode === code
+      );
+      return {
+        code: code,
+        name: submission?.testId?.subject?.subjectName || code
+      };
+    }).sort((a, b) => a.code.localeCompare(b.code));
+
+    const courses = [...new Set(allSubmissions.map(sub => sub.course).filter(Boolean))].map(courseCode => ({
+      courseCode,
+      courseName: courseCode
+    }));
+
+    // Calculate counts
+    const counts = {
+      finished: totalSubmissions,
+      started: 0,
+      absent: 0 // We'll calculate this separately if needed
+    };
+
+    res.json({
+      attendanceData: filteredData,
+      subjects,
+      courses,
+      counts,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalStudents: totalSubmissions,
+        studentsPerPage: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
+      },
+      filters: {
+        date,
+        testType,
+        selectedCourse: selectedCourse === 'all' ? null : selectedCourse,
+        selectedStatus: selectedStatus || 'all'
+      }
+    });
+
+    console.log('✅ New attendance response sent:', {
+      submissionsInPage: filteredData.length,
+      totalSubmissions,
+      currentPage: pageNum,
+      totalPages
+    });
+
+  } catch (error) {
+    console.error('Error fetching attendance data:', error);
+    res.status(500).json({
+      message: 'Server error while fetching attendance data',
+      error: error.message
+    });
+  }
+});
+
 // Updated attendance route with enhanced data when subject is selected
 router.get('/attendance/:courseId', adminAuth, async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { subject: selectedSubject } = req.query; // Get selected subject from query params
+    const { 
+      subject: selectedSubject, 
+      page = 1, 
+      limit = 25,
+      search = ''
+    } = req.query; // Get pagination and search params
+
+    console.log('📊 Attendance API called:', { courseId, selectedSubject, page, limit, search });
 
     // Get course details
     const Course = require('../models/Course');
+    const Student = require('../models/Student');
     const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    // Get all students in this course
-    const Student = require('../models/Student');
-    const students = await Student.find({ course: course.courseCode })
-      .select('_id fullName enrollmentNo')
-      .sort({ enrollmentNo: 1 });
+    console.log('🎓 Course details:', {
+      courseId: course._id,
+      courseCode: course.courseCode,
+      courseName: course.courseName
+    });
 
-    // Get all tests for this course
+    // Check if this matches the expected DHSE02 course ID
+    const expectedDHSE02CourseId = '6880ff1845ca253a98123326';
+    console.log('🔍 Course ID check:', {
+      currentCourseId: courseId,
+      expectedDHSE02CourseId,
+      isMatch: courseId === expectedDHSE02CourseId
+    });
+
+    // Build search query for students
+    let studentQuery = { course: course.courseCode };
+    if (search.trim()) {
+      studentQuery.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { enrollmentNo: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get total count of students for pagination
+    const totalStudents = await Student.countDocuments(studentQuery);
+    console.log('👥 Total students found:', totalStudents);
+
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    const totalPages = Math.ceil(totalStudents / limitNum);
+
+    // Get paginated students
+    const students = await Student.find(studentQuery)
+      .select('_id fullName enrollmentNo')
+      .sort({ enrollmentNo: 1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    console.log('📄 Students for current page:', students.length);
+
+    // Get all tests for this course (not paginated since tests are usually fewer)
     const tests = await Test.find({ course: courseId })
       .select('_id subject questions duration testType')
       .sort({ 'subject.subjectCode': 1, createdAt: 1 });
 
-    // Get all submissions for these students and tests
+    console.log('📝 Tests found:', tests.length);
+    console.log('📋 Test subjects found:', tests.map(t => ({
+      testId: t._id,
+      subjectCode: t.subject?.subjectCode,
+      subjectName: t.subject?.subjectName,
+      courseId: t.course // Check what course each test belongs to
+    })));
+
+    // Special debug for DHSE02
+    const dhse02Tests = tests.filter(t => t.subject?.subjectCode === 'DHSE02');
+    console.log('🔍 DHSE02 specific tests:', dhse02Tests.length, dhse02Tests.map(t => ({
+      testId: t._id,
+      courseId: t.course
+    })));
+
+    // Get submissions only for the current page of students
     const studentIds = students.map(s => s._id);
     const testIds = tests.map(t => t._id);
 
@@ -875,6 +1233,25 @@ router.get('/attendance/:courseId', adminAuth, async (req, res) => {
       userId: { $in: studentIds },
       testId: { $in: testIds }
     }).select(submissionFields);
+
+    console.log('📋 Submissions found for current page:', submissions.length);
+    
+    // Special debug for DHSE02 submissions
+    if (dhse02Tests.length > 0) {
+      const dhse02Submissions = submissions.filter(sub => 
+        dhse02Tests.some(test => test._id.toString() === sub.testId.toString())
+      );
+      console.log('🔍 DHSE02 submissions found:', dhse02Submissions.length);
+      if (dhse02Submissions.length > 0) {
+        console.log('📄 Sample DHSE02 submission:', {
+          submissionId: dhse02Submissions[0]._id,
+          testId: dhse02Submissions[0].testId,
+          userId: dhse02Submissions[0].userId,
+          isDraft: dhse02Submissions[0].isDraft,
+          isCompleted: dhse02Submissions[0].isCompleted
+        });
+      }
+    }
 
     // Structure the attendance data
     const attendanceData = students.map(student => {
@@ -893,6 +1270,16 @@ router.get('/attendance/:courseId', adminAuth, async (req, res) => {
           sub.testId.toString() === test._id.toString()
         );
 
+        // Special debug for DHSE02
+        if (test.subject?.subjectCode === 'DHSE02') {
+          console.log('🔍 DHSE02 test processing:', {
+            studentId: student._id.toString().substring(0, 8) + '...',
+            testId: test._id,
+            submissionFound: !!submission,
+            submissionId: submission?._id
+          });
+        }
+
         let status = 'Absent';
         let submissionData = {
           status,
@@ -904,10 +1291,22 @@ router.get('/attendance/:courseId', adminAuth, async (req, res) => {
         if (submission) {
           submissionData.submissionId = submission._id;
 
+          console.log('🔍 Submission debug:', {
+            submissionId: submission._id,
+            isDraft: submission.isDraft,
+            isCompleted: submission.isCompleted,
+            testId: test._id,
+            userId: student._id
+          });
+
           if (submission.isDraft) {
             status = 'Started';
           } else if (submission.isCompleted) {
             status = 'Finished';
+          } else {
+            // If not draft and not completed, what is it?
+            console.log('⚠️ Submission exists but neither draft nor completed:', submission);
+            status = 'Started'; // Default to Started if submission exists
           }
 
           submissionData.status = status;
@@ -932,34 +1331,135 @@ router.get('/attendance/:courseId', adminAuth, async (req, res) => {
           }
         }
 
-        studentAttendance.testStatuses[test.subject.subjectCode] = submissionData;
+        // Handle multiple tests for the same subject by keeping the "best" status
+        const existingStatus = studentAttendance.testStatuses[test.subject.subjectCode];
+        if (existingStatus) {
+          // Priority: Finished > Started > Absent
+          // Only overwrite if the new status is better
+          const statusPriority = { 'Finished': 3, 'Started': 2, 'Absent': 1 };
+          const currentPriority = statusPriority[existingStatus.status] || 0;
+          const newPriority = statusPriority[status] || 0;
+          
+          if (newPriority > currentPriority) {
+            studentAttendance.testStatuses[test.subject.subjectCode] = submissionData;
+            console.log('🔄 Updated DHSE02 status for student:', {
+              studentId: student._id.toString().substring(0, 8) + '...',
+              from: existingStatus.status,
+              to: status,
+              testId: test._id
+            });
+          } else {
+            console.log('⏭️ Keeping existing DHSE02 status for student:', {
+              studentId: student._id.toString().substring(0, 8) + '...',
+              existing: existingStatus.status,
+              skipped: status,
+              testId: test._id
+            });
+          }
+        } else {
+          studentAttendance.testStatuses[test.subject.subjectCode] = submissionData;
+        }
       });
 
       return studentAttendance;
     });
 
-    // Calculate summary counts based on selected subject or all subjects
-    const counts = { finished: 0, started: 0, absent: 0 };
+    // Calculate summary counts for ALL students (not just current page)
+    // For performance, we'll calculate this differently based on request
+    let counts = { finished: 0, started: 0, absent: 0 };
 
-    if (selectedSubject && selectedSubject !== 'all') {
-      // Count only for selected subject
-      attendanceData.forEach(studentData => {
-        const testStatus = studentData.testStatuses[selectedSubject];
-        if (testStatus) {
-          if (testStatus.status === 'Finished') counts.finished++;
-          else if (testStatus.status === 'Started') counts.started++;
-          else counts.absent++;
-        }
-      });
-    } else {
-      // Count for all subjects
-      attendanceData.forEach(studentData => {
-        Object.values(studentData.testStatuses).forEach(testStatus => {
-          if (testStatus.status === 'Finished') counts.finished++;
-          else if (testStatus.status === 'Started') counts.started++;
-          else counts.absent++;
+    // Only calculate detailed counts if specifically requested (first page or count request)
+    if (pageNum === 1 || req.query.includeCounts === 'true') {
+      console.log('🔢 Calculating total counts...');
+      
+      if (selectedSubject && selectedSubject !== 'all') {
+        // For specific subject, count students based on their status in that subject
+        const allStudents = await Student.find({ course: course.courseCode }).select('_id');
+        const subjectTests = tests.filter(t => t.subject.subjectCode === selectedSubject);
+        const allSubmissions = await Submission.find({
+          userId: { $in: allStudents.map(s => s._id) },
+          testId: { $in: subjectTests.map(t => t._id) }
+        }).select('userId testId isDraft isCompleted');
+
+        // Group submissions by student
+        const studentSubmissions = new Map();
+        allSubmissions.forEach(sub => {
+          if (!studentSubmissions.has(sub.userId.toString())) {
+            studentSubmissions.set(sub.userId.toString(), []);
+          }
+          studentSubmissions.get(sub.userId.toString()).push(sub);
         });
-      });
+
+        // Count each student once based on their overall status in the subject
+        allStudents.forEach(student => {
+          const studentId = student._id.toString();
+          const submissions = studentSubmissions.get(studentId) || [];
+          
+          if (submissions.length === 0) {
+            // No submissions for this subject
+            counts.absent++;
+          } else {
+            // Check if all tests in subject are completed
+            const completedCount = submissions.filter(sub => sub.isCompleted).length;
+            const startedCount = submissions.filter(sub => sub.isDraft).length;
+            
+            if (completedCount > 0) {
+              counts.finished++;
+            } else if (startedCount > 0) {
+              counts.started++;
+            } else {
+              counts.absent++;
+            }
+          }
+        });
+      } else {
+        // For all subjects, count students based on their overall progress
+        const allStudents = await Student.find({ course: course.courseCode }).select('_id');
+        const allSubmissions = await Submission.find({
+          userId: { $in: allStudents.map(s => s._id) },
+          testId: { $in: testIds }
+        }).select('userId testId isDraft isCompleted');
+
+        // Group submissions by student
+        const studentSubmissions = new Map();
+        allSubmissions.forEach(sub => {
+          if (!studentSubmissions.has(sub.userId.toString())) {
+            studentSubmissions.set(sub.userId.toString(), []);
+          }
+          studentSubmissions.get(sub.userId.toString()).push(sub);
+        });
+
+        // Count each student once based on their overall status across all subjects
+        allStudents.forEach(student => {
+          const studentId = student._id.toString();
+          const submissions = studentSubmissions.get(studentId) || [];
+          
+          console.log('👤 Student count debug:', {
+            studentId: studentId.substring(0, 8) + '...',
+            totalSubmissions: submissions.length,
+            completedSubmissions: submissions.filter(sub => sub.isCompleted).length,
+            draftSubmissions: submissions.filter(sub => sub.isDraft).length
+          });
+          
+          if (submissions.length === 0) {
+            // No submissions at all
+            counts.absent++;
+          } else {
+            const completedCount = submissions.filter(sub => sub.isCompleted).length;
+            const startedCount = submissions.filter(sub => sub.isDraft).length;
+            
+            if (completedCount > 0) {
+              counts.finished++;
+            } else if (startedCount > 0) {
+              counts.started++;
+            } else {
+              counts.absent++;
+            }
+          }
+        });
+      }
+      
+      console.log('📊 Total counts calculated:', counts);
     }
 
     // Get unique subjects
@@ -990,9 +1490,23 @@ router.get('/attendance/:courseId', adminAuth, async (req, res) => {
       attendanceData,
       subjects,
       counts,
-      totalStudents: students.length,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalStudents,
+        studentsPerPage: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
+      },
       totalTests: tests.length,
       selectedSubject: selectedSubject || 'all'
+    });
+
+    console.log('✅ Response sent:', {
+      studentsInPage: attendanceData.length,
+      totalStudents,
+      currentPage: pageNum,
+      totalPages
     });
 
   } catch (error) {
@@ -1036,6 +1550,194 @@ router.delete('/:submissionId', adminAuth, async (req, res) => {
     console.error('Error deleting submission:', error);
     res.status(500).json({
       message: 'Server error while deleting submission',
+      error: error.message
+    });
+  }
+});
+
+// Simple attendance endpoints - Get unique submission dates
+router.get('/attendance/dates', adminAuth, async (req, res) => {
+  try {
+    console.log('📅 Getting submission dates from submittedAt field...');
+    
+    // Get unique dates from submissions where submittedAt exists
+    const submissions = await Submission.find(
+      { submittedAt: { $exists: true, $ne: null } },
+      { submittedAt: 1 }
+    ).sort({ submittedAt: -1 });
+
+    // Extract unique dates (YYYY-MM-DD format)
+    const uniqueDates = [...new Set(
+      submissions.map(submission => 
+        submission.submittedAt.toISOString().split('T')[0]
+      )
+    )];
+
+    console.log('📅 Found submission dates:', uniqueDates.slice(0, 5), '... total:', uniqueDates.length);
+
+    res.json({
+      success: true,
+      dates: uniqueDates
+    });
+  } catch (error) {
+    console.error('Error getting submission dates:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting submission dates',
+      error: error.message
+    });
+  }
+});
+
+// Simple attendance endpoints - Get submissions filtered by date
+router.get('/attendance/data', adminAuth, async (req, res) => {
+  try {
+    const { 
+      date, 
+      testType = 'all', 
+      courseId = 'all', 
+      status = 'all', 
+      search = '', 
+      page = 1, 
+      limit = 50 
+    } = req.query;
+
+    console.log('📊 Getting attendance data for date:', date);
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date is required'
+      });
+    }
+
+    // Create date range for the selected day (00:00:00 to 23:59:59)
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
+    
+    console.log('📅 Date range:', { startDate, endDate });
+
+    // Build query conditions
+    let query = {
+      submittedAt: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    };
+
+    // Add status filter
+    if (status !== 'all') {
+      if (status === 'completed') {
+        query.isCompleted = true;
+        query.isDraft = false;
+      } else if (status === 'draft') {
+        query.isDraft = true;
+      }
+    }
+
+    console.log('🔍 Base query:', query);
+
+    // Get submissions with populated data
+    const submissions = await Submission.find(query)
+      .populate({
+        path: 'userId',
+        select: 'name email rollNumber'
+      })
+      .populate({
+        path: 'testId',
+        select: 'subjectName subjectCode testType courseId',
+        populate: {
+          path: 'courseId',
+          select: 'courseName courseCode'
+        }
+      })
+      .sort({ submittedAt: -1 });
+
+    console.log('📋 Raw submissions found:', submissions.length);
+
+    // Filter by testType and courseId after population
+    let filteredSubmissions = submissions.filter(submission => {
+      let include = true;
+      
+      // Filter by testType
+      if (testType !== 'all' && submission.testId?.testType !== testType) {
+        include = false;
+      }
+      
+      // Filter by courseId
+      if (courseId !== 'all' && submission.testId?.courseId?._id.toString() !== courseId) {
+        include = false;
+      }
+      
+      // Filter by search term
+      if (search.trim()) {
+        const searchTerm = search.trim().toLowerCase();
+        const studentName = submission.userId?.name?.toLowerCase() || '';
+        const rollNumber = submission.userId?.rollNumber?.toLowerCase() || '';
+        const subjectName = submission.testId?.subjectName?.toLowerCase() || '';
+        
+        if (!studentName.includes(searchTerm) && 
+            !rollNumber.includes(searchTerm) && 
+            !subjectName.includes(searchTerm)) {
+          include = false;
+        }
+      }
+      
+      return include;
+    });
+
+    console.log('📋 Filtered submissions:', filteredSubmissions.length);
+
+    // Apply pagination
+    const totalSubmissions = filteredSubmissions.length;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedSubmissions = filteredSubmissions.slice(skip, skip + parseInt(limit));
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalSubmissions / parseInt(limit));
+    const hasNextPage = parseInt(page) < totalPages;
+    const hasPrevPage = parseInt(page) > 1;
+
+    // Format the data for frontend
+    const formattedData = paginatedSubmissions.map(submission => ({
+      _id: submission._id,
+      studentName: submission.userId?.name || 'Unknown',
+      rollNumber: submission.userId?.rollNumber || 'N/A',
+      email: submission.userId?.email || 'N/A',
+      subjectName: submission.testId?.subjectName || 'Unknown Subject',
+      subjectCode: submission.testId?.subjectCode || 'N/A',
+      testType: submission.testId?.testType || 'unknown',
+      courseName: submission.testId?.courseId?.courseName || 'Unknown Course',
+      courseCode: submission.testId?.courseId?.courseCode || 'N/A',
+      questionsAttempted: submission.questionsAttempted || 0,
+      totalQuestions: submission.totalQuestions || 0,
+      score: submission.score || 0,
+      startedAt: submission.startedAt,
+      submittedAt: submission.submittedAt,
+      timeTaken: submission.timeTaken || 0,
+      status: submission.isDraft ? 'Draft' : (submission.isCompleted ? 'Completed' : 'In Progress')
+    }));
+
+    console.log('✅ Sending formatted data:', formattedData.length, 'submissions');
+
+    res.json({
+      success: true,
+      attendanceData: formattedData,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalSubmissions,
+        hasNextPage,
+        hasPrevPage,
+        limit: parseInt(limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting attendance data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting attendance data',
       error: error.message
     });
   }

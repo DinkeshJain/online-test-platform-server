@@ -517,7 +517,7 @@ if (shuffledAllQuestions.length >= 70) {
 // Get a specific test by ID for editing (Admin only)
 router.get('/:id/edit', adminAuth, async (req, res) => {
   try {
-    const test = await Test.findById(req.params.id);
+    const test = await Test.findById(req.params.id).populate('course', '_id courseCode courseName');
 
     if (!test) {
       return res.status(404).json({ message: 'Test not found' });
