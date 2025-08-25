@@ -59,36 +59,72 @@ router.post('/auto-save', auth, async (req, res) => {
       return res.status(400).json({ message: 'Test already submitted' });
     }
 
-    // ✅ FIXED: Process answers for auto-save with proper originalQuestionNumber
+    // ✅ CRITICAL FIX: Process answers for auto-save with proper validation and debugging
     const processedAnswers = [];
+    console.log('🔍 AUTO-SAVE: Processing answers:', answers);
+    console.log('🔍 AUTO-SAVE: Answers type:', typeof answers);
+    console.log('🔍 AUTO-SAVE: Answers keys count:', answers ? Object.keys(answers).length : 0);
+    
     if (answers && typeof answers === 'object') {
       for (const [questionId, selectedAnswer] of Object.entries(answers)) {
+        console.log(`🔍 Processing questionId: ${questionId}, selectedAnswer: ${selectedAnswer}, type: ${typeof selectedAnswer}`);
+        
+        // ✅ CRITICAL: Allow 0 as valid answer, handle type conversion
         if (selectedAnswer !== null && selectedAnswer !== undefined) {
-          const question = test.questions.id(questionId);
-          let isCorrect = false;
+          // Convert to number and validate
+          const answerNum = parseInt(selectedAnswer);
+          
+          if (!isNaN(answerNum) && answerNum >= 0 && answerNum <= 3) {
+            // Try multiple ways to find the question
+            let question = test.questions.id(questionId);
+            if (!question) {
+              question = test.questions.find(q => q._id.toString() === questionId);
+            }
+            
+            console.log(`🔍 Question found for ${questionId}: ${question ? 'YES' : 'NO'}`);
+            
+            if (!question) {
+              console.error(`❌ Question not found for ID: ${questionId}`);
+              continue; // Skip this answer but continue processing others
+            }
+            
+            let isCorrect = false;
+            if (question) {
+              // ✅ CRITICAL: Compare numbers with numbers
+              isCorrect = question.correctAnswer === answerNum;
+              console.log(`🔍 Question ${questionId}: correctAnswer=${question.correctAnswer}, selectedAnswer=${answerNum}, isCorrect=${isCorrect}`);
+            }
 
-          if (question && selectedAnswer !== null && selectedAnswer !== undefined) {
-            isCorrect = question.correctAnswer === selectedAnswer;
+            // ✅ FIXED: Calculate proper original question number
+            let originalQuestionNumber = 1;
+            if (question) {
+              const questionIndex = test.questions.findIndex(q => q._id.toString() === questionId);
+              if (questionIndex !== -1) {
+                originalQuestionNumber = questionIndex + 1;
+              }
+              console.log(`🔍 Original question number: ${originalQuestionNumber}`);
+            }
+
+            processedAnswers.push({
+              questionId,
+              selectedAnswer: answerNum, // ✅ Store as number
+              isCorrect,
+              originalQuestionNumber,
+              shuffledPosition: processedAnswers.length + 1,
+              shuffledToOriginal: question?.shuffledToOriginal || []
+            });
+            
+            console.log(`✅ Answer saved: Q${originalQuestionNumber} -> ${answerNum} (${isCorrect ? 'CORRECT' : 'INCORRECT'})`);
+          } else {
+            console.log(`❌ Invalid answer value: ${selectedAnswer} (${typeof selectedAnswer}) - not in range 0-3`);
           }
-
-          // ✅ FIXED: Calculate proper original question number
-          let originalQuestionNumber = 1;
-          if (question) {
-            const questionIndex = test.questions.findIndex(q => q._id.toString() === questionId);
-            originalQuestionNumber = question.originalQuestionNumber || question.questionNumber || (questionIndex + 1);
-          }
-
-          processedAnswers.push({
-            questionId,
-            selectedAnswer,
-            isCorrect,
-            originalQuestionNumber, // ✅ NOW USES CORRECT VALUE
-            shuffledPosition: processedAnswers.length + 1,
-            shuffledToOriginal: question?.shuffledToOriginal || []
-          });
+        } else {
+          console.log(`⚠️ Skipping questionId ${questionId} - null/undefined answer`);
         }
       }
     }
+    
+    console.log(`✅ PROCESSED ${processedAnswers.length} answers out of ${answers ? Object.keys(answers).length : 0} total`);
 
     // Calculate current score
     const currentScore = processedAnswers.filter(answer => answer.isCorrect).length;
