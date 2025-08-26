@@ -65,6 +65,15 @@ app.options('*', (req, res) => {
 
 app.use('/uploads', express.static('uploads'));
 
+// Health check endpoint for API availability detection
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/tests', require('./routes/tests'));
 app.use('/api/submissions', require('./routes/submissions'));

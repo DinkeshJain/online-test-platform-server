@@ -7,6 +7,14 @@ const { auth, adminAuth, adminOrEvaluatorAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
+/**
+ * IMPORTANT: Auto-save functionality has been replaced with localStorage-based saving
+ * - Auto-save routes are deprecated but kept for backward compatibility
+ * - Frontend now uses localStorage for instant, offline-capable saving
+ * - Server-side progress tracking (drafts, heartbeats, resume counts) is no longer needed
+ * - Final submission route remains unchanged for test completion
+ */
+
 // Helper function to check if submission is allowed (for ongoing tests)
 function canSubmitTest(test, testStartedAt) {
   if (!test.isActive) {
@@ -32,142 +40,29 @@ function canSubmitTest(test, testStartedAt) {
   return now <= submissionDeadline && now <= studentTimeLimit;
 }
 
-// ✅ FIXED: Auto-save route with proper originalQuestionNumber handling
+// DEPRECATED: Auto-save route - replaced with localStorage-based saving
+// This route is kept for backward compatibility but should not be used
 router.post('/auto-save', auth, async (req, res) => {
   try {
-    const { testId, answers, reviewFlags, currentQuestionIndex, timeLeft, testStartedAt, testStructure } = req.body;
-
-    if (!testId || timeLeft === undefined) {
-      return res.status(400).json({ message: 'testId and timeLeft are required' });
-    }
-
-    // Get the test to validate
-    const test = await Test.findById(testId);
-    if (!test) {
-      return res.status(404).json({ message: 'Test not found' });
-    }
-
-    // IMPORTANT: Check only for FINAL submissions, not drafts
-    const existingFinalSubmission = await Submission.findOne({
-      testId,
-      userId: req.user._id,
-      isDraft: false,
-      isCompleted: true
+    // Auto-save functionality has been replaced with localStorage
+    // Return success response for backward compatibility
+    res.status(200).json({
+      message: 'Auto-save functionality deprecated - using localStorage',
+      deprecated: true,
+      useLocalStorage: true
     });
-
-    if (existingFinalSubmission) {
-      return res.status(400).json({ message: 'Test already submitted' });
-    }
-
-    // ✅ FIXED: Process answers for auto-save with proper originalQuestionNumber
-    const processedAnswers = [];
-    if (answers && typeof answers === 'object') {
-      for (const [questionId, selectedAnswer] of Object.entries(answers)) {
-        if (selectedAnswer !== null && selectedAnswer !== undefined) {
-          const question = test.questions.id(questionId);
-          let isCorrect = false;
-
-          if (question && selectedAnswer !== null && selectedAnswer !== undefined) {
-            isCorrect = question.correctAnswer === selectedAnswer;
-          }
-
-          // ✅ FIXED: Calculate proper original question number
-          let originalQuestionNumber = 1;
-          if (question) {
-            const questionIndex = test.questions.findIndex(q => q._id.toString() === questionId);
-            originalQuestionNumber = question.originalQuestionNumber || question.questionNumber || (questionIndex + 1);
-          }
-
-          processedAnswers.push({
-            questionId,
-            selectedAnswer,
-            isCorrect,
-            originalQuestionNumber, // ✅ NOW USES CORRECT VALUE
-            shuffledPosition: processedAnswers.length + 1,
-            shuffledToOriginal: question?.shuffledToOriginal || []
-          });
-        }
-      }
-    }
-
-    // Calculate current score
-    const currentScore = processedAnswers.filter(answer => answer.isCorrect).length;
-
-    // Convert reviewFlags to Map if it's an object
-    let reviewFlagsMap = new Map();
-    if (reviewFlags && typeof reviewFlags === 'object') {
-      for (const [key, value] of Object.entries(reviewFlags)) {
-        if (value) {
-          reviewFlagsMap.set(key, value);
-        }
-      }
-    }
-
-    // FIXED: Find existing draft to get current auto-save count
-    const existingDraft = await Submission.findOne({
-      testId,
-      userId: req.user._id,
-      isDraft: true
-    });
-
-    const currentAutoSaveCount = existingDraft ? (existingDraft.autoSaveCount || 0) : 0;
-    const testWithCourse = await Test.findById(testId).populate('course', 'courseCode');
-
-    // ✅ ENHANCED: Synchronize heartbeat with auto-save to fix timestamp mismatch
-    const now = new Date();
-
-    // Update or create draft submission
-    const submissionData = {
-      testId,
-      userId: req.user._id,
-      answers: processedAnswers,
-      score: currentScore,
-      totalQuestions: test.questions.length,
-      timeSpent: (test.duration * 60) - timeLeft,
-      testStartedAt: testStartedAt ? new Date(testStartedAt) : new Date(),
-      isDraft: true,
-      lastSavedAt: now, // ✅ Synchronized timestamp
-      lastHeartbeat: now, // ✅ Update heartbeat at same time
-      currentQuestionIndex: currentQuestionIndex || 0,
-      timeLeftWhenSaved: timeLeft,
-      reviewFlags: reviewFlagsMap,
-      isCompleted: false,
-      crashDetected: false,
-
-      // NEW: Add denormalized fields for performance
-      enrollmentNo: req.user.enrollmentNo,
-      course: testWithCourse.course.courseCode,
-      testType: test.testType || 'official',
-
-      // FIXED: Increment auto-save count properly
-      autoSaveCount: currentAutoSaveCount + 1,
-
-      // Keep existing resume count (don't change it here)
-      resumeCount: existingDraft ? existingDraft.resumeCount || 0 : 0,
-
-      // Save the test structure exactly as presented to student
-      savedTestStructure: testStructure ? JSON.stringify(testStructure) : null
-    };
-
-    const submission = await Submission.findOneAndUpdate(
-      { testId, userId: req.user._id, isDraft: true },
-      submissionData,
-      { upsert: true, new: true }
-    );
-
-    res.json({
-      message: 'Progress saved successfully',
-      lastSavedAt: submission.lastSavedAt,
-      autoSaveCount: submission.autoSaveCount
-    });
-
   } catch (error) {
-    console.error('Auto-save error:', error);
-    res.status(500).json({ message: 'Server error while saving progress' });
+    console.error('Deprecated auto-save endpoint accessed:', error);
+    res.status(200).json({ 
+      message: 'Auto-save functionality deprecated - using localStorage',
+      deprecated: true,
+      useLocalStorage: true
+    });
   }
 });
 
-// FIXED: Load progress route - DON'T increment resume count here
+// DEPRECATED: Load progress route - localStorage now handles progress saving
+// This route is kept for backward compatibility but localStorage is preferred
 router.get('/load-progress/:testId', auth, async (req, res) => {
   try {
     const { testId } = req.params;
@@ -190,152 +85,77 @@ router.get('/load-progress/:testId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Test already submitted' });
     }
 
-    // Find draft submission
-    const draftSubmission = await Submission.findOne({
-      testId,
-      userId: req.user._id,
-      isDraft: true
-    });
-
-    if (!draftSubmission) {
-      return res.json({ hasProgress: false });
-    }
-
-    // Check if progress is not too old
-    const now = new Date();
-    const timeSinceLastSave = (now - draftSubmission.lastSavedAt) / 1000;
-
-    if (timeSinceLastSave > 900) {  // 15 minutes
-      return res.status(400).json({
-        message: 'Saved progress is too old. Please start the test again.'
-      });
-    }
-
-    // Convert answers to object format
-    const answersObj = {};
-    draftSubmission.answers.forEach(answer => {
-      answersObj[answer.questionId] = answer.selectedAnswer;
-    });
-
-    // Convert reviewFlags Map to object
-    const reviewFlagsObj = {};
-    if (draftSubmission.reviewFlags) {
-      for (let [key, value] of draftSubmission.reviewFlags) {
-        reviewFlagsObj[key] = value;
-      }
-    }
-
-    // Parse saved test structure
-    let savedTestStructure = null;
-    if (draftSubmission.savedTestStructure) {
-      try {
-        savedTestStructure = JSON.parse(draftSubmission.savedTestStructure);
-      } catch (error) {
-        console.error('Error parsing saved test structure:', error);
-      }
-    }
-
-    // FIXED: DON'T increment resume count here - only when user clicks "Resume Test"
-    // Just mark that crash was detected but don't increment counter yet
-    draftSubmission.crashDetected = true;
-    await draftSubmission.save();
-
-    res.json({
-      hasProgress: true,
-      progress: {
-        answers: answersObj,
-        reviewFlags: reviewFlagsObj,
-        currentQuestionIndex: draftSubmission.currentQuestionIndex || 0,
-        timeLeft: draftSubmission.timeLeftWhenSaved || test.duration * 60,
-        testStartedAt: draftSubmission.testStartedAt,
-        resumeCount: draftSubmission.resumeCount || 0, // Show current count without incrementing
-        lastSavedAt: draftSubmission.lastSavedAt,
-        autoSaveCount: draftSubmission.autoSaveCount || 0,
-        savedTestStructure: savedTestStructure
-      }
+    // Since we're using localStorage, return that no server-side progress exists
+    // The frontend will handle loading from localStorage
+    res.json({ 
+      hasProgress: false,
+      message: 'Using localStorage for progress - no server-side progress needed',
+      useLocalStorage: true
     });
 
   } catch (error) {
-    console.error('Error loading progress:', error);
-    res.status(500).json({ message: 'Server error while loading progress' });
+    console.error('Error in deprecated load progress route:', error);
+    res.status(500).json({ message: 'Server error while checking progress' });
   }
 });
 
-// NEW: Resume test route - increment resume count only when user clicks "Resume Test"
+// DEPRECATED: Resume test route - localStorage handles test resumption
+// This route is kept for backward compatibility
 router.post('/resume-test/:testId', auth, async (req, res) => {
   try {
-    const { testId } = req.params;
-
-    // Find draft submission
-    const draftSubmission = await Submission.findOne({
-      testId,
-      userId: req.user._id,
-      isDraft: true
-    });
-
-    if (!draftSubmission) {
-      return res.status(404).json({ message: 'No saved progress found' });
-    }
-
-    // FIXED: Increment resume count only when user actually resumes
-    draftSubmission.resumeCount = (draftSubmission.resumeCount || 0) + 1;
-    draftSubmission.crashDetected = true;
-    await draftSubmission.save();
-
+    // Resume functionality is now handled by localStorage
     res.json({
-      message: 'Resume count updated',
-      resumeCount: draftSubmission.resumeCount
+      message: 'Resume functionality moved to localStorage',
+      deprecated: true,
+      useLocalStorage: true,
+      resumeCount: 0
     });
-
   } catch (error) {
-    console.error('Error updating resume count:', error);
-    res.status(500).json({ message: 'Server error while updating resume count' });
+    console.error('Deprecated resume test endpoint accessed:', error);
+    res.status(200).json({ 
+      message: 'Resume functionality moved to localStorage',
+      deprecated: true,
+      useLocalStorage: true,
+      resumeCount: 0
+    });
   }
 });
 
-// Heartbeat endpoint for crash detection
+// DEPRECATED: Heartbeat endpoint - no longer needed with localStorage
+// This route is kept for backward compatibility
 router.post('/heartbeat/:testId', auth, async (req, res) => {
   try {
-    const { testId } = req.params;
-
-    await Submission.findOneAndUpdate(
-      { testId, userId: req.user._id, isDraft: true },
-      {
-        lastHeartbeat: new Date(),
-        crashDetected: false
-      }
-    );
-
-    res.json({ message: 'Heartbeat recorded' });
+    // Heartbeat functionality is no longer needed with localStorage
+    res.json({ 
+      message: 'Heartbeat functionality deprecated - using localStorage',
+      deprecated: true,
+      useLocalStorage: true
+    });
   } catch (error) {
-    console.error('Error recording heartbeat:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Deprecated heartbeat endpoint accessed:', error);
+    res.status(200).json({ 
+      message: 'Heartbeat functionality deprecated - using localStorage',
+      deprecated: true
+    });
   }
 });
 
-// ✅ FIXED: Submit test answers - only save answered questions with enhanced metadata
+// ✅ FIXED: Minimal submission with complete data integrity
 router.post('/', auth, async (req, res) => {
   try {
-    const { testId, answers, timeSpent, testStartedAt, proctoring, totalQuestions, answeredQuestions, unansweredQuestions } = req.body;
+    const { testId, answers, timeSpent, testStartedAt, autoSubmitted = false } = req.body;
 
-    // Better validation
     if (!testId) {
       return res.status(400).json({ message: 'testId is required' });
     }
-    if (!answers || !Array.isArray(answers)) {
-      return res.status(400).json({ message: 'answers must be an array' });
-    }
-    if (typeof timeSpent !== 'number') {
-      return res.status(400).json({ message: 'timeSpent must be a number' });
-    }
 
-    // Get the test to validate answers
+    // Get the test to validate
     const test = await Test.findById(testId);
     if (!test) {
       return res.status(404).json({ message: 'Test not found' });
     }
 
-    // Check if user has already submitted this test (FINAL submission)
+    // Check for existing final submission
     const existingFinalSubmission = await Submission.findOne({
       testId,
       userId: req.user._id,
@@ -347,96 +167,108 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ message: 'Test already submitted' });
     }
 
-    // Validate submission timing
-    const studentTestStartTime = testStartedAt ? new Date(testStartedAt) : new Date();
-    if (!canSubmitTest(test, studentTestStartTime)) {
-      return res.status(400).json({
-        message: 'Submission deadline has passed. The test is no longer accepting submissions.'
+    // Process answers with guaranteed data integrity
+    const processedAnswers = [];
+    
+    if (answers && Array.isArray(answers)) {
+      answers.forEach((answer, index) => {
+        // Validate answer structure
+        if (!answer || !answer.questionId || answer.selectedAnswer === undefined || answer.selectedAnswer === null) {
+          console.warn(`Skipping invalid answer at index ${index}:`, answer);
+          return;
+        }
+
+        // Validate selectedAnswer value
+        if (typeof answer.selectedAnswer !== 'number' || 
+            answer.selectedAnswer < 0 || 
+            answer.selectedAnswer > 3 || 
+            !Number.isInteger(answer.selectedAnswer)) {
+          console.warn(`Invalid selectedAnswer for question ${answer.questionId}:`, answer.selectedAnswer);
+          return;
+        }
+
+        const question = test.questions.id(answer.questionId);
+        if (!question) {
+          console.warn(`Question not found: ${answer.questionId}`);
+          return;
+        }
+
+        // Calculate correctness
+        let isCorrect = false;
+        if (answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal) && answer.shuffledToOriginal.length > 0) {
+          const originalIndex = answer.shuffledToOriginal[answer.selectedAnswer];
+          isCorrect = originalIndex === question.correctAnswer;
+        } else {
+          isCorrect = question.correctAnswer === answer.selectedAnswer;
+        }
+
+        processedAnswers.push({
+          questionId: answer.questionId,
+          selectedAnswer: answer.selectedAnswer,
+          isCorrect,
+          originalQuestionNumber: answer.originalQuestionNumber || 1,
+          shuffledPosition: index + 1,
+          shuffledToOriginal: answer.shuffledToOriginal || []
+        });
       });
     }
 
-    // ✅ ENHANCED: Log submission details for debugging
-    console.log(`Submission received:`, {
-      userId: req.user.enrollmentNo,
-      testId,
-      totalQuestions: totalQuestions || test.questions.length,
-      answeredQuestions: answeredQuestions || answers.length,
-      unansweredQuestions: unansweredQuestions || (test.questions.length - answers.length),
-      isAutoSubmitted: proctoring?.isAutoSubmitted || false,
-      violations: proctoring?.totalViolations || 0
-    });
-
-    // Calculate score only for answered questions
-    let score = 0;
-    const processedAnswers = answers.map((answer, index) => {
-      const question = test.questions.id(answer.questionId);
-
-      let isCorrect = false;
-      if (question && answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal)) {
-        const selectedOriginalIndex = answer.shuffledToOriginal[answer.selectedAnswer];
-        isCorrect = selectedOriginalIndex === question.correctAnswer;
-      } else {
-        isCorrect = question && question.correctAnswer === answer.selectedAnswer;
-      }
-
-      if (isCorrect) score++;
-
-      return {
-        questionId: answer.questionId,
-        selectedAnswer: answer.selectedAnswer,
-        isCorrect,
-        originalQuestionNumber: answer.originalQuestionNumber || (index + 1),
-        shuffledPosition: index + 1,
-        shuffledToOriginal: answer.shuffledToOriginal || []
-      };
-    });
-
-    const testWithCourse = await Test.findById(testId).populate('course', 'courseCode');
-    if (!testWithCourse) {
-      return res.status(404).json({ message: 'Test not found' });
-    }
-    if (!testWithCourse.course) {
-      return res.status(400).json({ message: 'Test course not found' });
+    // Get student and course info
+    const student = await Student.findById(req.user._id);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
     }
 
-    // ✅ ENHANCED: Create FINAL submission with comprehensive metadata
-    const submissionTime = new Date();
-    const submission = new Submission({
-      testId,
-      userId: req.user._id,
-      answers: processedAnswers,
-      score,
-      totalQuestions: totalQuestions || test.questions.length,
-      answeredQuestions: answeredQuestions || answers.length, // ✅ Track answered count
-      unansweredQuestions: unansweredQuestions || (test.questions.length - answers.length), // ✅ Track unanswered count
-      timeSpent: timeSpent || 0,
-      testStartedAt: studentTestStartTime,
-      submittedAt: submissionTime, // ✅ Set submission timestamp
-      lastSavedAt: submissionTime, // ✅ Set last saved as submission time for final submissions
-      isCompleted: true,
-      isDraft: false, // Mark as final submission
+    // Calculate final score
+    const score = processedAnswers.filter(answer => answer.isCorrect).length;
+    const percentage = (score / test.questions.length) * 100;
+    const now = new Date();
 
-      // ✅ Add proctoring metadata
-      isAutoSubmitted: proctoring?.isAutoSubmitted || false,
-      proctoringViolations: proctoring?.totalViolations || 0,
-      submissionReason: proctoring?.isAutoSubmitted ? 'auto_submitted' : 'manual_submitted',
-
-      // NEW: Add denormalized fields for performance
-      enrollmentNo: req.user.enrollmentNo,
-      course: testWithCourse.course.courseCode,
-      testType: test.testType || 'official'
-    });
-
-    await submission.save();
-
-    // Clean up any draft submissions for this test
-    await Submission.deleteMany({
+    // Find existing draft for metadata
+    const existingDraft = await Submission.findOne({
       testId,
       userId: req.user._id,
       isDraft: true
     });
 
-    // Return result only if test shows scores to students
+    // Create final submission data
+    const submissionData = {
+      testId,
+      userId: req.user._id,
+      answers: processedAnswers,
+      score,
+      percentage,
+      totalQuestions: test.questions.length,
+      answeredQuestions: processedAnswers.length,
+      unansweredQuestions: test.questions.length - processedAnswers.length,
+      timeSpent: timeSpent || 0,
+      testStartedAt: testStartedAt ? new Date(testStartedAt) : now,
+      submittedAt: now,
+      isDraft: false,
+      isCompleted: true,
+      isAutoSubmitted: autoSubmitted,
+      lastSavedAt: now,
+      
+      // Denormalized fields for performance
+      enrollmentNo: student.enrollmentNo,
+      course: student.course,
+      testType: test.testType || 'official'
+      
+      // Note: autoSaveCount and resumeCount removed since we use localStorage
+    };
+
+    // Delete any existing draft first
+    await Submission.deleteOne({
+      testId,
+      userId: req.user._id,
+      isDraft: true
+    });
+
+    // Create final submission
+    const submission = new Submission(submissionData);
+    await submission.save();
+
+    // Return result
     const result = {
       message: 'Test submitted successfully',
       submissionId: submission._id,
@@ -446,7 +278,7 @@ router.post('/', auth, async (req, res) => {
 
     if (test.showScoresToStudents) {
       result.score = score;
-      result.percentage = submission.totalQuestions > 0 ? Math.round((score / submission.totalQuestions) * 100) : 0;
+      result.percentage = Math.round(percentage * 100) / 100;
     }
 
     res.status(201).json(result);
@@ -1740,6 +1572,102 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
       message: 'Error getting attendance data',
       error: error.message
     });
+  }
+});
+
+// ✅ SAFE HOT-FIX: Monitoring endpoints (safe to deploy during exam)
+router.get('/monitor/null-answers-live', adminAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const last2Hours = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    
+    const recentSubmissions = await Submission.find({
+      submittedAt: { $gte: last2Hours },
+      isDraft: false,
+      isCompleted: true
+    }).populate('testId', 'subject');
+    
+    const issueStats = {
+      timeWindow: '2 hours',
+      total: recentSubmissions.length,
+      withNullIssues: 0,
+      affectedStudents: [],
+      issueRate: 0
+    };
+    
+    recentSubmissions.forEach(submission => {
+      const nullCount = submission.answers?.filter(a => 
+        a.selectedAnswer === null || a.selectedAnswer === undefined
+      ).length || 0;
+      
+      if (nullCount > 0) {
+        issueStats.withNullIssues++;
+        issueStats.affectedStudents.push({
+          enrollmentNo: submission.enrollmentNo,
+          testSubject: submission.testId?.subject?.subjectCode,
+          nullCount,
+          totalAnswers: submission.answers?.length || 0,
+          submittedAt: submission.submittedAt,
+          issuePercentage: ((nullCount / (submission.answers?.length || 1)) * 100).toFixed(1)
+        });
+      }
+    });
+    
+    issueStats.issueRate = ((issueStats.withNullIssues / issueStats.total) * 100).toFixed(2);
+    
+    res.json(issueStats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/dashboard/issue-summary', adminAuth, async (req, res) => {
+  try {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
+    const todaySubmissions = await Submission.find({
+      submittedAt: { $gte: startOfDay },
+      isDraft: false,
+      isCompleted: true
+    });
+    
+    const summary = {
+      date: startOfDay.toISOString().split('T')[0],
+      totalSubmissions: todaySubmissions.length,
+      issuesDetected: 0,
+      criticalIssues: 0,
+      affectedStudents: []
+    };
+    
+    todaySubmissions.forEach(submission => {
+      const nullCount = submission.answers?.filter(a => 
+        a.selectedAnswer === null || a.selectedAnswer === undefined
+      ).length || 0;
+      
+      if (nullCount > 0) {
+        summary.issuesDetected++;
+        
+        const issuePercentage = (nullCount / (submission.answers?.length || 1)) * 100;
+        if (issuePercentage > 50) {
+          summary.criticalIssues++;
+        }
+        
+        summary.affectedStudents.push({
+          enrollmentNo: submission.enrollmentNo,
+          nullCount,
+          totalAnswers: submission.answers?.length || 0,
+          issuePercentage: issuePercentage.toFixed(1),
+          submittedAt: submission.submittedAt
+        });
+      }
+    });
+    
+    summary.issueRate = ((summary.issuesDetected / summary.totalSubmissions) * 100).toFixed(2);
+    
+    res.json(summary);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

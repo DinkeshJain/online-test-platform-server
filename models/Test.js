@@ -13,6 +13,14 @@ const testSchema = new mongoose.Schema({
     correctAnswer: {
       type: Number,
       required: true
+    },
+    originalQuestionNumber: {
+      type: Number,
+      required: false // Will be auto-assigned if not present
+    },
+    shuffledToOriginal: {
+      type: [Number],
+      default: [0, 1, 2, 3] // Default option order
     }
   }],
   duration: {
