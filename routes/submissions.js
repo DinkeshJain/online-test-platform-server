@@ -41,16 +41,15 @@ router.post('/auto-save/:testId', auth, async (req, res) => {
       reviewFlags,
       currentQuestionIndex,
       timeLeft,
+      timeSpent,
       testStartedAt,
-      totalQuestions
+      totalQuestions,
+      answeredQuestions,
+      unansweredQuestions,
+      currentScore,
+      scorePercentage,
+      status
     } = req.body;
-
-    console.log('📝 Auto-save received:', {
-      testId,
-      answersCount: answers?.length || 0,
-      currentQuestion: currentQuestionIndex,
-      timeLeft
-    });
 
     // Validate test exists
     const test = await Test.findById(testId);
@@ -76,7 +75,7 @@ router.post('/auto-save/:testId', auth, async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Process answers according to schema - filter out null answers
+    // Process answers according to schema - filter out null answers and preserve isCorrect
     const processedAnswers = [];
     if (answers && Array.isArray(answers)) {
       answers.forEach((answer, index) => {
@@ -89,6 +88,7 @@ router.post('/auto-save/:testId', auth, async (req, res) => {
               processedAnswers.push({
                 questionId: answer.questionId,
                 selectedAnswer: validatedAnswer,
+                isCorrect: answer.isCorrect || false, // Store the isCorrect from frontend
                 originalQuestionNumber: answer.originalQuestionNumber || (index + 1),
                 shuffledPosition: answer.shuffledPosition || (index + 1),
                 shuffledToOriginal: answer.shuffledToOriginal || [0, 1, 2, 3]
@@ -112,9 +112,15 @@ router.post('/auto-save/:testId', auth, async (req, res) => {
       testType: test.testType || 'official',
       answers: processedAnswers,
       totalQuestions: totalQuestions || test.questions.length,
+      answeredQuestions: answeredQuestions || processedAnswers.length,
+      unansweredQuestions: unansweredQuestions || (totalQuestions - processedAnswers.length),
       currentQuestionIndex: currentQuestionIndex || 0,
       timeLeftWhenSaved: timeLeft || 0,
+      timeSpent: timeSpent || 0,
+      currentScore: currentScore || 0,
+      scorePercentage: scorePercentage || 0,
       testStartedAt: testStartedAt ? new Date(testStartedAt) : new Date(),
+      status: status || 'in_progress',
       isDraft: true,
       isCompleted: false,
       lastSavedAt: new Date(),
@@ -139,15 +145,14 @@ router.post('/auto-save/:testId', auth, async (req, res) => {
       }
     );
 
-    console.log('✅ Auto-save successful:', {
-      submissionId: result._id,
-      answersCount: processedAnswers.length,
-      autoSaveCount: result.autoSaveCount
-    });
-
     res.json({
       message: 'Progress auto-saved successfully',
       answersCount: processedAnswers.length,
+      currentScore: currentScore || 0,
+      scorePercentage: scorePercentage || 0,
+      answeredQuestions: answeredQuestions || processedAnswers.length,
+      totalQuestions: totalQuestions || test.questions.length,
+      timeSpent: timeSpent || 0,
       lastSavedAt: result.lastSavedAt,
       autoSaveCount: result.autoSaveCount
     });
@@ -245,38 +250,34 @@ router.get('/load-progress/:testId', auth, async (req, res) => {
 router.post('/resume-test/:testId', auth, async (req, res) => {
   try {
     const { testId } = req.params;
+    const studentId = req.user.id;
 
-    // Increment resume count for draft submission
-    const draftSubmission = await Submission.findOneAndUpdate(
-      {
-        testId,
-        userId: req.user._id,
-        isDraft: true
-      },
-      {
-        $inc: { resumeCount: 1 },
-        lastSavedAt: new Date()
-      },
-      { new: true }
-    );
+    // Find existing submission
+    const submission = await Submission.findOne({
+      testId: testId,
+      studentId: studentId
+    });
 
-    if (draftSubmission) {
-      res.json({
-        message: 'Test resumed successfully',
-        resumeCount: draftSubmission.resumeCount
-      });
-    } else {
-      res.json({
-        message: 'No draft found to resume',
-        resumeCount: 0
-      });
+    if (submission && submission.status !== 'completed') {
+      // Update resume count
+      submission.metadata = {
+        ...submission.metadata,
+        resumeCount: (submission.metadata.resumeCount || 0) + 1,
+        lastResumedAt: new Date()
+      };
+      await submission.save();
     }
 
+    res.status(200).json({
+      success: true,
+      message: 'Test resume logged'
+    });
+
   } catch (error) {
-    console.error('Resume test error:', error);
+    console.error('❌ Error logging test resume:', error);
     res.status(500).json({
-      message: 'Server error while resuming test',
-      error: error.message
+      success: false,
+      message: 'Failed to log test resume'
     });
   }
 });
@@ -366,7 +367,14 @@ router.post('/', auth, async (req, res) => {
         let isCorrect = false;
         if (answer.shuffledToOriginal && Array.isArray(answer.shuffledToOriginal) && answer.shuffledToOriginal.length > 0) {
           const originalIndex = answer.shuffledToOriginal[validatedAnswer];
-          isCorrect = originalIndex === question.correctAnswer;
+          // Add safety check for undefined originalIndex (sparse arrays)
+          if (originalIndex !== undefined && originalIndex !== null) {
+            isCorrect = originalIndex === question.correctAnswer;
+          } else {
+            console.warn(`Invalid shuffledToOriginal mapping for question ${answer.questionId}, position ${validatedAnswer}`);
+            // Fallback to direct comparison
+            isCorrect = question.correctAnswer === validatedAnswer;
+          }
         } else {
           isCorrect = question.correctAnswer === validatedAnswer;
         }
@@ -941,8 +949,6 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
       search = ''
     } = req.query;
 
-    console.log('📊 New Attendance API called:', { date, testType, selectedCourse, selectedStatus, page, limit, search });
-
     // Validate required parameters
     if (!date || !testType) {
       return res.status(400).json({
@@ -953,7 +959,6 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
     // Parse date and create range for the day
     const startDate = new Date(date + 'T00:00:00.000Z');
     const endDate = new Date(date + 'T23:59:59.999Z');
-    console.log('📅 Date range:', { startDate, endDate });
 
     // Build submission query
     let submissionQuery = {
@@ -970,8 +975,6 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
     if (selectedCourse && selectedCourse !== 'all') {
       submissionQuery.course = selectedCourse;
     }
-
-    console.log('🔍 Submission query:', submissionQuery);
 
     // Calculate pagination
     const pageNum = parseInt(page);
@@ -999,14 +1002,11 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
 
     // Get total count before pagination
     const totalSubmissions = await Submission.countDocuments(submissionQuery);
-    console.log('📊 Total submissions found:', totalSubmissions);
 
     // Apply pagination
     const submissions = await submissionsQuery
       .skip(skip)
       .limit(limitNum);
-
-    console.log('📋 Submissions for current page:', submissions.length);
 
     // Transform submissions into the expected format
     const attendanceData = submissions.map(submission => {
@@ -1102,13 +1102,6 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
         selectedCourse: selectedCourse === 'all' ? null : selectedCourse,
         selectedStatus: selectedStatus || 'all'
       }
-    });
-
-    console.log('✅ New attendance response sent:', {
-      submissionsInPage: filteredData.length,
-      totalSubmissions,
-      currentPage: pageNum,
-      totalPages
     });
 
   } catch (error) {
@@ -1217,6 +1210,101 @@ router.get('/dashboard/issue-summary', adminAuth, async (req, res) => {
     res.json(summary);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ NEW: Create initial submission when test starts
+router.post('/start-test', auth, async (req, res) => {
+  try {
+    const {
+      testId,
+      testStartedAt,
+      status = 'in_progress',
+      totalQuestions,
+      testTitle,
+      subject,
+      duration,
+      metadata = {}
+    } = req.body;
+
+    const studentId = req.user.id;
+
+    // Validate required fields
+    if (!testId || !testStartedAt || !totalQuestions) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: testId, testStartedAt, or totalQuestions'
+      });
+    }
+
+    // Check if test exists
+    const test = await Test.findById(testId);
+    if (!test) {
+      return res.status(404).json({
+        success: false,
+        message: 'Test not found'
+      });
+    }
+
+    // Check if student is enrolled in the test
+    if (!test.enrolledStudents.includes(studentId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not enrolled in this test'
+      });
+    }
+
+    // Check if submission already exists
+    const existingSubmission = await Submission.findOne({
+      testId: testId,
+      studentId: studentId
+    });
+
+    if (existingSubmission) {
+      return res.status(409).json({
+        success: false,
+        message: 'Submission already exists for this test',
+        submissionId: existingSubmission._id
+      });
+    }
+
+    // Create new submission
+    const newSubmission = new Submission({
+      testId,
+      studentId,
+      answers: [],
+      testStartedAt: new Date(testStartedAt),
+      status,
+      totalQuestions,
+      answeredQuestions: 0,
+      unansweredQuestions: totalQuestions,
+      timeSpent: 0,
+      testTitle,
+      subject,
+      duration,
+      metadata,
+      reviewFlags: {},
+      currentQuestionIndex: 0,
+      timeLeft: duration * 60, // Convert minutes to seconds
+      isActive: true
+    });
+
+    const savedSubmission = await newSubmission.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Initial submission created successfully',
+      submissionId: savedSubmission._id,
+      testStartedAt: savedSubmission.testStartedAt
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating initial submission:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create initial submission',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

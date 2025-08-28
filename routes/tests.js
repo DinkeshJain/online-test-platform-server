@@ -358,32 +358,13 @@ router.get('/', auth, async (req, res) => {
 // Get all tests for admin (including inactive ones)
 router.get('/admin', adminAuth, async (req, res) => {
   try {
-    console.log('🎯 GET /tests/admin endpoint called');
-
     // Test basic query first
-    const testCount = await Test.countDocuments();
-    console.log('📊 Total tests in database:', testCount);
-    
+    const testCount = await Test.countDocuments();    
     const tests = await Test.find()
       .select('-createdBy') // Exclude createdBy field
       .sort({ createdAt: -1 });
 
-    console.log('📋 Tests found:', tests.length);
-    if (tests.length > 0) {
-      console.log('📝 Sample test data:', {
-        id: tests[0]._id,
-        courseCode: tests[0].courseCode,
-        courseName: tests[0].courseName,
-        subjectCode: tests[0].subject?.subjectCode,
-        subjectName: tests[0].subject?.subjectName,
-        questionsCount: tests[0].questions?.length
-      });
-    }
-
-    console.log('📤 Sending response with tests array length:', tests.length);
-    const response = { tests };
-    console.log('📦 Response structure:', Object.keys(response));
-    
+    const response = { tests };    
     res.json(response);
   } catch (error) {
     console.error('Get admin tests error:', error);

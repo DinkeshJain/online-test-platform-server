@@ -46,29 +46,21 @@ const auth = async (req, res, next) => {
 
 const adminAuth = async (req, res, next) => {
   try {
-    console.log('🔐 ADMIN AUTH MIDDLEWARE');
     const authHeader = req.header('Authorization');
-    console.log('📋 Authorization Header:', authHeader);
     
     if (!authHeader) {
-      console.log('❌ No Authorization header');
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
     const token = authHeader.replace('Bearer ', '');
-    console.log('🎫 Extracted token:', token ? token.substring(0, 20) + '...' : 'EMPTY');
-    console.log('🎫 Token length:', token.length);
 
     if (!token) {
-      console.log('❌ No token after Bearer extraction');
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
     const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
-    console.log('🔑 JWT Secret for verification:', jwtSecret ? 'SET' : 'NOT SET');
     
     const decoded = jwt.verify(token, jwtSecret);
-    console.log('✅ Token decoded successfully:', decoded);
     
     // Try to find user in Admin collection first
     let user = await Admin.findById(decoded.id).select('-password');
