@@ -369,7 +369,9 @@ router.get('/debug-students/:courseId/:subjectCode', evaluatorAuth, async (req, 
     // Get students for this specific course if course exists
     let courseStudents = [];
     if (course) {
-      courseStudents = await Student.find({ course: course.courseCode }).select('fullName enrollmentNo');
+      courseStudents = await Student.find({ course: course.courseCode })
+        .select('fullName enrollmentNo')
+        .sort({ enrollmentNo: 1 }); // Sort by enrollment number in ascending order
     }
     
     res.json({
@@ -423,8 +425,10 @@ router.get('/students/:courseId/:subjectCode', evaluatorAuth, async (req, res) =
     const courseSubject = course.subjects.find(s => s.subjectCode === subjectCode);
     const hasExternalExam = courseSubject ? courseSubject.hasExternalExam : true; // Default to true if not found
 
-    // Get all students in this course
-    const students = await Student.find({ course: course.courseCode }).select('fullName enrollmentNo emailId');
+    // Get all students in this course sorted by enrollment number
+    const students = await Student.find({ course: course.courseCode })
+      .select('fullName enrollmentNo emailId')
+      .sort({ enrollmentNo: 1 }); // Sort by enrollment number in ascending order
 
     // Get existing internal marks for these students
     const existingMarks = await InternalMarks.find({
@@ -484,12 +488,15 @@ router.post('/internal-marks', evaluatorAuth, async (req, res) => {
     const { studentId, courseId, subjectCode, subjectName, internalMarks } = req.body;
 
     // Validate required fields
-    if (!studentId || !courseId || !subjectCode || internalMarks === undefined) {
+    if (!studentId || !courseId || !subjectCode) {
       console.log('Missing required fields:', { studentId, courseId, subjectCode, internalMarks });
       return res.status(400).json({ 
-        message: 'Student, course, subject, and internal marks are required' 
+        message: 'Student, course, and subject are required' 
       });
     }
+
+    // Check if marks are being cleared (empty string, null, or undefined)
+    const isMarkBeingCleared = internalMarks === '' || internalMarks === null || internalMarks === undefined;
 
     // Validate ObjectIds
     if (!mongoose.Types.ObjectId.isValid(studentId)) {
@@ -529,10 +536,30 @@ router.post('/internal-marks', evaluatorAuth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied to this course/subject' });
     }
 
-    // Validate marks range
-    const marksNum = parseFloat(internalMarks);
-    if (isNaN(marksNum) || marksNum < 0 || marksNum > 30) {
-      return res.status(400).json({ message: 'Internal marks must be a number between 0 and 30' });
+    // Verify course exists and get subject details
+    const course = await Course.findById(courseId);
+    if (!course) {
+      console.log('Course not found:', courseId);
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    // Find the subject in course to check hasExternalExam
+    const courseSubject = course.subjects.find(s => s.subjectCode === subjectCode);
+    const hasExternalExam = courseSubject ? courseSubject.hasExternalExam : true; // Default to true if not found
+
+    // Handle marks validation
+    let marksNum = null;
+    if (!isMarkBeingCleared) {
+      // Validate marks range based on whether subject has external exam
+      marksNum = parseFloat(internalMarks);
+      let maxMarks = hasExternalExam ? 30 : 100; // 30 for subjects with external exam, 100 for subjects without
+      
+      if (isNaN(marksNum) || marksNum < 0 || marksNum > maxMarks) {
+        const marksType = hasExternalExam ? 'internal marks' : 'total marks';
+        return res.status(400).json({ 
+          message: `${marksType} must be a number between 0 and ${maxMarks}` 
+        });
+      }
     }
 
     // Verify student exists
@@ -542,11 +569,36 @@ router.post('/internal-marks', evaluatorAuth, async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Verify course exists
-    const course = await Course.findById(courseId);
-    if (!course) {
-      console.log('Course not found:', courseId);
-      return res.status(404).json({ message: 'Course not found' });
+    // Query for existing marks with detailed logging
+    const findQuery = {
+      studentId: new mongoose.Types.ObjectId(studentId),
+      courseId: new mongoose.Types.ObjectId(courseId),
+      subjectCode,
+      evaluatorId: req.user._id
+    };
+    
+    console.log('Looking for existing mark with query:', findQuery);
+    
+    const existingMark = await InternalMarks.findOne(findQuery);
+    console.log('Existing mark found:', existingMark);
+
+    if (isMarkBeingCleared) {
+      // If marks are being cleared, delete the existing record if it exists
+      if (existingMark) {
+        console.log('Deleting existing mark with ID:', existingMark._id);
+        await InternalMarks.findByIdAndDelete(existingMark._id);
+        console.log('Mark deleted successfully');
+        return res.json({ 
+          success: true,
+          message: 'Internal marks cleared successfully' 
+        });
+      } else {
+        console.log('No existing mark to clear');
+        return res.json({ 
+          success: true,
+          message: 'No marks to clear' 
+        });
+      }
     }
 
     // Update or create internal marks
@@ -561,20 +613,6 @@ router.post('/internal-marks', evaluatorAuth, async (req, res) => {
     };
 
     console.log('Internal mark data to save:', internalMarkData);
-
-    // Query for existing marks with detailed logging
-    const findQuery = {
-      studentId: internalMarkData.studentId,
-      courseId: internalMarkData.courseId,
-      subjectCode,
-      evaluatorId: req.user._id
-    };
-    
-    console.log('Looking for existing mark with query:', findQuery);
-    
-    const existingMark = await InternalMarks.findOne(findQuery);
-
-    console.log('Existing mark found:', existingMark);
 
     if (existingMark) {
       // Update existing marks

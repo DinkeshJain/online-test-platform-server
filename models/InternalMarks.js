@@ -28,7 +28,7 @@ const internalMarksSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 0,
-    max: 30
+    max: 100 // Updated to allow up to 100 for subjects without external exams
   },
   evaluatorId: {
     type: mongoose.Schema.Types.ObjectId,

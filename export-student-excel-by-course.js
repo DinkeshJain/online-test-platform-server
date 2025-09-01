@@ -9,7 +9,7 @@ const Submission = require('./models/Submission');
 
 async function exportStudentResults() {
   try {
-    console.log('📊 Starting Excel export by course...');
+    console.log('📊 Starting Excel export by course (Official Tests Only)...');
 
     // Connect to database
     await mongoose.connect(process.env.MONGO_URI);
@@ -22,9 +22,9 @@ async function exportStudentResults() {
 
     console.log(`Found ${students.length} students`);
 
-    // Get all tests with subjects
-    const tests = await Test.find({})
-      .select('subject questions courseCode courseName')
+    // Get only official tests with subjects
+    const tests = await Test.find({ testType: 'official' })
+      .select('subject questions courseCode courseName testType')
       .sort({ 'subject.subjectCode': 1 });
 
     // Create subjects grouped by course
@@ -60,23 +60,33 @@ async function exportStudentResults() {
     });
 
     const allSubjects = Array.from(subjectMap.values());
-    console.log(`Found ${allSubjects.length} subjects across ${Object.keys(courseSubjects).length} courses`);
+    console.log(`Found ${tests.length} official tests with ${allSubjects.length} subjects across ${Object.keys(courseSubjects).length} courses`);
 
-    // Get all submissions
+    // Get all submissions for official tests only
     const submissions = await Submission.find({})
-      .populate('testId', 'subject')
-      .select('enrollmentNo score testId');
+      .populate({
+        path: 'testId',
+        match: { testType: 'official' },
+        select: 'subject testType'
+      })
+      .select('enrollmentNo score testId answers');
 
-    // Create lookup for submissions
+    // Filter out submissions where testId is null (non-official tests)
+    const officialSubmissions = submissions.filter(sub => sub.testId !== null);
+
+    // Create lookup for submissions from official tests only
     const submissionLookup = {};
-    submissions.forEach(sub => {
+    officialSubmissions.forEach(sub => {
       if (sub.enrollmentNo && sub.testId && sub.testId.subject) {
         const key = `${sub.enrollmentNo}_${sub.testId.subject.subjectCode}`;
-        submissionLookup[key] = sub.score;
+        submissionLookup[key] = {
+          score: sub.score,
+          answersLength: Array.isArray(sub.answers) ? sub.answers.length : 0
+        };
       }
     });
 
-    console.log(`Found ${submissions.length} submissions`);
+    console.log(`Found ${officialSubmissions.length} official test submissions out of ${submissions.length} total submissions`);
 
     // Create Excel workbook
     const workbook = new ExcelJS.Workbook();
@@ -111,7 +121,7 @@ async function exportStudentResults() {
       headers.push('Total', 'Passed', 'Failed', 'Absent');
 
       // Add course summary at the top
-      const summaryRow = worksheet.addRow([`${course} Course - ${courseStudents.length} Students - ${courseSubjectList.length} Subjects`]);
+      const summaryRow = worksheet.addRow([`${course} Course - ${courseStudents.length} Students - ${courseSubjectList.length} Subjects (Official Tests Only)`]);
       summaryRow.font = { bold: true, size: 14, color: { argb: '000000' } };
       summaryRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E6F3FF' } };
       summaryRow.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -138,14 +148,13 @@ async function exportStudentResults() {
         // Add scores for subjects that this course has
         courseSubjectList.forEach(subject => {
           const key = `${student.enrollmentNo}_${subject.code}`;
-          const score = submissionLookup[key];
-          
-          if (score !== undefined && score !== null) {
-            row.push(score);
-            if (score >= 30) passed++;
+          const subObj = submissionLookup[key];
+          if (subObj && subObj.score !== undefined && subObj.score !== null) {
+            row.push(`${subObj.score}/${subObj.answersLength}`);
+            if (subObj.score >= 28) passed++;
             else failed++;
           } else {
-            row.push('AB');
+            row.push('AB/-');
             absent++;
           }
         });
@@ -169,18 +178,21 @@ async function exportStudentResults() {
 
           // Color code subject scores (columns 5 onwards, before summary)
           if (colNumber > 4 && colNumber <= 4 + courseSubjectList.length) {
-            if (cell.value === 'AB') {
+            if (typeof cell.value === 'string' && cell.value.startsWith('AB')) {
               // Red for absent
               cell.font = { color: { argb: 'FFFFFF' }, bold: true };
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DC3545' } };
-            } else if (typeof cell.value === 'number' && cell.value < 30) {
-              // Red for fail
-              cell.font = { color: { argb: 'FFFFFF' }, bold: true };
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DC3545' } };
-            } else if (typeof cell.value === 'number' && cell.value >= 30) {
-              // Green for pass
-              cell.font = { color: { argb: 'FFFFFF' } };
-              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '28A745' } };
+            } else if (typeof cell.value === 'string' && cell.value.includes('/')) {
+              const scoreVal = parseFloat(cell.value.split('/')[0]);
+              if (!isNaN(scoreVal) && scoreVal < 28) {
+                // Red for fail
+                cell.font = { color: { argb: 'FFFFFF' }, bold: true };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DC3545' } };
+              } else if (!isNaN(scoreVal) && scoreVal >= 28) {
+                // Green for pass
+                cell.font = { color: { argb: 'FFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '28A745' } };
+              }
             }
           }
         });
@@ -192,7 +204,7 @@ async function exportStudentResults() {
         else if (index === 1) column.width = 15; // Enrollment
         else if (index === 2) column.width = 25; // Name
         else if (index === 3) column.width = 15; // Batch
-        else column.width = 12;                   // Others
+        else column.width = 12;                  // Others
       });
     });
 
@@ -201,11 +213,12 @@ async function exportStudentResults() {
     
     // Add summary data
     const summaryData = [
-      ['📊 OVERALL STATISTICS', ''],
+      ['📊 OVERALL STATISTICS (Official Tests Only)', ''],
       ['Total Students', students.length],
       ['Total Courses', Object.keys(studentsByCourse).length],
-      ['Total Subjects', allSubjects.length],
-      ['Total Submissions', submissions.length],
+      ['Total Official Subjects', allSubjects.length],
+      ['Total Official Tests', tests.length],
+      ['Total Submissions (Official)', officialSubmissions.length],
       ['Export Date', new Date().toLocaleString()],
       ['', ''],
       ['📚 COURSE BREAKDOWN', ''],
@@ -220,9 +233,10 @@ async function exportStudentResults() {
 
     summaryData.push(['', '']);
     summaryData.push(['🎨 COLOR CODING', '']);
-    summaryData.push(['Red Background', 'Score < 30 or Absent']);
-    summaryData.push(['Green Background', 'Score ≥ 30 (Passing)']);
+    summaryData.push(['Red Background', 'Score < 28 or Absent']);
+    summaryData.push(['Green Background', 'Score ≥ 28 (Passing)']);
     summaryData.push(['Blue Header', 'Column Headers']);
+    summaryData.push(['Note:', 'Only Official Tests Included']);
 
     summaryData.forEach((rowData, index) => {
       const summaryRow = summarySheet.addRow(rowData);
@@ -252,12 +266,12 @@ async function exportStudentResults() {
     summarySheet.columns[2].width = 15;
 
     // Save file
-    const fileName = `Student_Results_by_Course_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Student_Results_by_Course_Official_${new Date().toISOString().split('T')[0]}.xlsx`;
     await workbook.xlsx.writeFile(fileName);
 
     console.log(`✅ Excel file created: ${fileName}`);
-    console.log(`📊 Created ${Object.keys(studentsByCourse).length} course sheets + summary`);
-    console.log('🎨 Color coding: Red = Fail/Absent, Green = Pass');
+    console.log(`📊 Created ${Object.keys(studentsByCourse).length} course sheets + summary (Official Tests Only)`);
+    console.log('🎨 Color coding: Red = Fail/Absent (<28), Green = Pass (≥28)');
 
     await mongoose.disconnect();
 
