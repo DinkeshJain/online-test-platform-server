@@ -63,6 +63,7 @@ async function exportStudentResults() {
     // Connect to database
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ Connected to MongoDB');
+    console.log(process.env.MONGO_URI);
 
     // Get all students
     const students = await Student.find({})
