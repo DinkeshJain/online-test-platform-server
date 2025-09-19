@@ -213,6 +213,8 @@ async function exportStudentResults() {
             'Enrollment Number',
             'Full Name', 
             'Student Email Address',
+            'Grade Points',
+            'Grade',
             'Total Marks/100'
           ];
           const rows = [headers];
@@ -227,6 +229,8 @@ async function exportStudentResults() {
               student.enrollmentNo,
               student.fullName,
               student.emailId || '-',
+              '', // Grade Points - will be formula
+              '', // Grade - will be formula
               finalMarks
             ];
             rows.push(row);
@@ -240,14 +244,15 @@ async function exportStudentResults() {
             { width: 20 }, // Enrollment Number
             { width: 30 }, // Full Name
             { width: 35 }, // Email
+            { width: 15 }, // Grade Points
+            { width: 10 }, // Grade
             { width: 20 }  // Final Marks
           ];
           worksheet['!cols'] = colWidths;
 
-          // Header styling
+          // Header styling - simple border only
           const headerStyle = {
-            font: { bold: true, color: { rgb: "FFFFFF" }, size: 12 },
-            fill: { patternType: 'solid', fgColor: { rgb: "366092" }, bgColor: { rgb: "366092" } },
+            font: { bold: true },
             alignment: { horizontal: "center", vertical: "center" },
             border: {
               top: { style: 'thin', color: { rgb: "000000" } },
@@ -264,7 +269,7 @@ async function exportStudentResults() {
             worksheet[cellRef].s = headerStyle;
           }
 
-          // Add borders to data cells
+          // Add borders and center alignment to data cells
           for (let row = 1; row < rows.length; row++) {
             for (let col = 0; col < headers.length; col++) {
               const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
@@ -278,7 +283,33 @@ async function exportStudentResults() {
                 bottom: { style: 'thin', color: { rgb: "000000" } },
                 right: { style: 'thin', color: { rgb: "000000" } }
               };
+              // Add center alignment to all cells
+              worksheet[cellRef].s.alignment = { horizontal: "center", vertical: "center" };
             }
+          }
+
+          // Add formulas for Grade Points and Grade columns for no external exam subjects
+          const gradePointsCol = 3; // Grade Points column
+          const gradeCol = 4; // Grade column  
+          const totalMarksCol = 5; // Total Marks column
+
+          for (let row = 1; row < rows.length; row++) {
+            const totalMarksCellRef = XLSX.utils.encode_cell({ r: row, c: totalMarksCol });
+            const gradePointsCellRef = XLSX.utils.encode_cell({ r: row, c: gradePointsCol });
+            const gradeCellRef = XLSX.utils.encode_cell({ r: row, c: gradeCol });
+
+            // For no external exam subjects, we use total marks directly for grading
+            // Grade Points formula using nested IF statements based on total marks
+            worksheet[gradePointsCellRef] = {
+              f: `IF(${totalMarksCellRef}="","",IF(${totalMarksCellRef}>=90,10,IF(${totalMarksCellRef}>=80,9,IF(${totalMarksCellRef}>=70,8,IF(${totalMarksCellRef}>=60,7,IF(${totalMarksCellRef}>=50,6,IF(${totalMarksCellRef}>=40,5,"-")))))))`,
+              t: 's'
+            };
+
+            // Grade formula using nested IF statements based on total marks
+            worksheet[gradeCellRef] = {
+              f: `IF(${totalMarksCellRef}="","",IF(${totalMarksCellRef}>=90,"O",IF(${totalMarksCellRef}>=80,"A",IF(${totalMarksCellRef}>=70,"B",IF(${totalMarksCellRef}>=60,"C",IF(${totalMarksCellRef}>=50,"D",IF(${totalMarksCellRef}>=40,"E","F")))))))`,
+              t: 's'
+            };
           }
 
           // Add worksheet to workbook
@@ -383,6 +414,8 @@ async function exportStudentResults() {
               const internalMarksKey = `${student.enrollmentNo}_${subject.code}`;
               const internalMarks = internalMarksLookup[internalMarksKey] || 0;
               
+              // We'll use formulas for Total Marks, Grade Points, and Grade
+              // For now, store the values for reference
               const totalMarks = gradeOutOfTotal + internalMarks;
               const { gradePoints, grade } = calculateGradeAndPoints(totalMarks, gradeOutOfTotal, maxQuestions);
 
@@ -395,10 +428,10 @@ async function exportStudentResults() {
                 testCompletedOn,
                 formatTimeSpent(submission.timeSpent, test.duration,
                   submission.testStartedAt, submission.submittedAt),
-                gradePoints,
-                grade,
-                totalMarks,
-                internalMarks || '',
+                '', // Grade Points - will be formula
+                '', // Grade - will be formula
+                '', // Total Marks - will be formula
+                internalMarks || 0,
                 gradeOutOfTotal,
                 ...questionStatuses.map(status => status === '-' ? '-' : parseFloat(status))
               ];
@@ -422,7 +455,11 @@ async function exportStudentResults() {
                 student.emailId || '-',
                 'Absent',
                 '-', '-', '-',
-                gradePoints, grade, totalMarks, internalMarks || '', externalMarks,
+                '', // Grade Points - will be formula
+                '', // Grade - will be formula  
+                '', // Total Marks - will be formula
+                internalMarks || 0, 
+                externalMarks,
                 ...questionStatuses
               ];
               rows.push(row);
@@ -450,10 +487,9 @@ async function exportStudentResults() {
         }
         worksheet['!cols'] = colWidths;
 
-        // Header styling
+        // Header styling - simple border only
         const headerStyle = {
-          font: { bold: true, color: { rgb: "FFFFFF" }, size: 12 },
-          fill: { patternType: 'solid', fgColor: { rgb: "366092" }, bgColor: { rgb: "366092" } },
+          font: { bold: true },
           alignment: { horizontal: "center", vertical: "center" },
           border: {
             top: { style: 'thin', color: { rgb: "000000" } },
@@ -469,81 +505,61 @@ async function exportStudentResults() {
           worksheet[cellRef].s = headerStyle;
         }
 
-        // Grade and score styling
-        const passStyle = {
-          fill: { patternType: 'solid', fgColor: { rgb: '28A745' }, bgColor: { rgb: '28A745' } },
-          font: { color: { rgb: 'FFFFFF' }, bold: true },
+        // Simple cell styling with borders and center alignment
+        const basicCellStyle = {
           border: {
             top: { style: 'thin', color: { rgb: "000000" } },
             left: { style: 'thin', color: { rgb: "000000" } },
             bottom: { style: 'thin', color: { rgb: "000000" } },
             right: { style: 'thin', color: { rgb: "000000" } }
-          }
-        };
-        const failStyle = {
-          fill: { patternType: 'solid', fgColor: { rgb: 'DC3545' }, bgColor: { rgb: 'DC3545' } },
-          font: { color: { rgb: 'FFFFFF' }, bold: true },
-          border: {
-            top: { style: 'thin', color: { rgb: "000000" } },
-            left: { style: 'thin', color: { rgb: "000000" } },
-            bottom: { style: 'thin', color: { rgb: "000000" } },
-            right: { style: 'thin', color: { rgb: "000000" } }
-          }
-        };
-        const absentStyle = {
-          fill: { patternType: 'solid', fgColor: { rgb: 'FF8000' }, bgColor: { rgb: 'FF8000' } },
-          font: { color: { rgb: 'FFFFFF' }, bold: true },
-          border: {
-            top: { style: 'thin', color: { rgb: "000000" } },
-            left: { style: 'thin', color: { rgb: "000000" } },
-            bottom: { style: 'thin', color: { rgb: "000000" } },
-            right: { style: 'thin', color: { rgb: "000000" } }
-          }
+          },
+          alignment: { horizontal: "center", vertical: "center" }
         };
 
         const gradePointsCol = 7;
         const gradeCol = 8;
         const totalMarksCol = 9;
+        const internalMarksCol = 10;
         const externalMarksCol = 11;
 
+        // Add formulas and styling for each data row
         for (let row = 1; row < rows.length; row++) {
-          const externalMarks = parseFloat(rows[row][externalMarksCol]) || 0;
-          const gradeValue = rows[row][gradeCol];
-          
-          // Determine style based on external marks (≥28 = green, <28 = red)
-          let style;
-          if (gradeValue === 'W') {
-            style = absentStyle; // Absent
-          } else if (externalMarks >= 28) {
-            style = passStyle; // Pass (green)
-          } else {
-            style = failStyle; // Fail (red)
-          }
+          // Add formulas for Total Marks, Grade Points, and Grade
+          const internalMarksCellRef = XLSX.utils.encode_cell({ r: row, c: internalMarksCol });
+          const externalMarksCellRef = XLSX.utils.encode_cell({ r: row, c: externalMarksCol });
+          const totalMarksCellRef = XLSX.utils.encode_cell({ r: row, c: totalMarksCol });
+          const gradePointsCellRef = XLSX.utils.encode_cell({ r: row, c: gradePointsCol });
+          const gradeCellRef = XLSX.utils.encode_cell({ r: row, c: gradeCol });
 
-          // Apply style to grade points, grade, total marks, and external marks columns
-          [gradePointsCol, gradeCol, totalMarksCol, externalMarksCol].forEach(col => {
+          // Total Marks formula: Internal + External
+          worksheet[totalMarksCellRef] = {
+            f: `${internalMarksCellRef}+${externalMarksCellRef}`,
+            t: 'n'
+          };
+
+          // Grade Points formula using nested IF statements
+          worksheet[gradePointsCellRef] = {
+            f: `IF(${externalMarksCellRef}=0,"W",IF((${externalMarksCellRef}/70)*100<35,"-",IF(${totalMarksCellRef}>=90,10,IF(${totalMarksCellRef}>=80,9,IF(${totalMarksCellRef}>=70,8,IF(${totalMarksCellRef}>=60,7,IF(${totalMarksCellRef}>=50,6,IF(${totalMarksCellRef}>=40,5,"-"))))))))`,
+            t: 's'
+          };
+
+          // Grade formula using nested IF statements  
+          worksheet[gradeCellRef] = {
+            f: `IF(${externalMarksCellRef}=0,"W",IF((${externalMarksCellRef}/70)*100<35,"F",IF(${totalMarksCellRef}>=90,"O",IF(${totalMarksCellRef}>=80,"A",IF(${totalMarksCellRef}>=70,"B",IF(${totalMarksCellRef}>=60,"C",IF(${totalMarksCellRef}>=50,"D",IF(${totalMarksCellRef}>=40,"E","F"))))))))`,
+            t: 's'
+          };
+
+          // Get calculated values for styling (we need to evaluate the external marks from the original data)
+          const externalMarks = parseFloat(rows[row][externalMarksCol]) || 0;
+
+          // Apply simple styling with center alignment to all cells
+          for (let col = 0; col < headers.length; col++) {
             const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
             if (!worksheet[cellRef]) {
               worksheet[cellRef] = { v: rows[row][col], t: typeof rows[row][col] === 'number' ? 'n' : 's' };
             }
-            worksheet[cellRef].s = style;
-          });
-
-          // Add borders to all other cells
-          for (let col = 0; col < headers.length; col++) {
-            if (![gradePointsCol, gradeCol, totalMarksCol, externalMarksCol].includes(col)) {
-              const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-              if (!worksheet[cellRef]) {
-                worksheet[cellRef] = { v: rows[row][col], t: typeof rows[row][col] === 'number' ? 'n' : 's' };
-              }
-              if (!worksheet[cellRef].s) worksheet[cellRef].s = {};
-              worksheet[cellRef].s.border = {
-                top: { style: 'thin', color: { rgb: "000000" } },
-                left: { style: 'thin', color: { rgb: "000000" } },
-                bottom: { style: 'thin', color: { rgb: "000000" } },
-                right: { style: 'thin', color: { rgb: "000000" } }
-              };
-            }
+            if (!worksheet[cellRef].s) worksheet[cellRef].s = {};
+            worksheet[cellRef].s = basicCellStyle;
           }
         }
 
@@ -566,8 +582,8 @@ async function exportStudentResults() {
     console.log(`📊 Created ${totalSubjects} subject sheets:`);
     console.log(`   - ${externalExamSubjectsCount} subjects with external exam (official tests)`);
     console.log(`   - ${noExternalExamSubjectsCount} subjects without external exam (internal marks only)`);
-    console.log('🎨 Color coding: Green = External marks ≥28, Red = External marks <28, Orange = Absent');
-    console.log('📋 Headers: Blue background with borders and enhanced styling');
+    console.log('📋 Simple styling: Bold headers with borders, center-aligned data with borders');
+    console.log('🧮 Formulas: Total Marks, Grade Points, and Grade columns use Excel formulas');
 
     await mongoose.disconnect();
 
