@@ -43,6 +43,10 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Routes
+app.use('/api/results', require('./routes/results'));
+app.use('/api/excel-results', require('./routes/excel-results'));
+
 // Enhanced OPTIONS handler for CORS preflight requests
 app.options('*', (req, res) => {
   const origin = req.headers.origin;
