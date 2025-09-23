@@ -4,6 +4,7 @@ const Student = require('../models/Student');
 const InternalMarks = require('../models/InternalMarks');
 const Submission = require('../models/Submission');
 const Test = require('../models/Test');
+const Result = require('../models/Result');
 
 const router = express.Router();
 
@@ -26,6 +27,57 @@ router.get('/courses-with-results', async (req, res) => {
   } catch (error) {
     console.error('Error fetching courses with results:', error);
     res.status(500).json({ message: 'Server error while fetching courses' });
+  }
+});
+
+// Get student results
+router.get('/student-results/:enrollmentNo', async (req, res) => {
+  try {
+    const { enrollmentNo } = req.params;
+
+    // Fetch all results for the student
+    const results = await Result.find({ enrollmentNo })
+      .sort({
+        'course.semester': 1, // Sort by semester
+        academicYear: 1      // Then by academic year
+      });
+
+    if (!results || results.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No results found for this enrollment number' 
+      });
+    }
+
+    // Process results to include semester-wise data
+    const processedResults = results.map(result => ({
+      semester: result.course.semester,
+      academicYear: result.academicYear,
+      courseCode: result.course.courseCode,
+      courseName: result.course.courseName,
+      sgpa: result.sgpa,
+      subjects: result.subjects.map(subject => ({
+        subjectCode: subject.subjectCode,
+        subjectName: subject.subjectName,
+        credits: subject.credits,
+        grade: subject.grade,
+        marks: subject.marks
+      }))
+    }));
+
+    res.json({
+      success: true,
+      enrollmentNo,
+      studentName: results[0]?.fullName,
+      results: processedResults
+    });
+
+  } catch (error) {
+    console.error('Error fetching student results:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while fetching results' 
+    });
   }
 });
 
