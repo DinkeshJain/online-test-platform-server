@@ -2,6 +2,7 @@ require('dotenv').config();
 const xlsx = require('xlsx');
 const mongoose = require('mongoose');
 const Result = require('../models/Result');
+const SupplementaryResult = require('../models/SupplementaryResult');
 const Student = require('../models/Student');
 const Course = require('../models/Course');
 const path = require('path');
@@ -44,6 +45,70 @@ function log(level, message, data = null) {
   console.log(logEntry);
 }
 
+// Function to remove duplicate results
+async function removeDuplicateResults() {
+  try {
+    console.log('Checking for duplicate results...');
+    
+    const duplicates = await Result.aggregate([
+      {
+        $group: {
+          _id: {
+            enrollmentNo: '$enrollmentNo',
+            semester: '$semester',
+            academicYear: '$academicYear',
+            courseCode: '$course.courseCode'
+          },
+          count: { $sum: 1 },
+          docs: { $push: '$_id' }
+        }
+      },
+      {
+        $match: {
+          count: { $gt: 1 }
+        }
+      }
+    ]);
+
+    if (duplicates.length === 0) {
+      console.log('No duplicate results found.');
+      return 0;
+    }
+
+    console.log(`Found ${duplicates.length} sets of duplicate results.`);
+
+    let removedCount = 0;
+    for (const duplicate of duplicates) {
+      // Keep the first document, remove the rest
+      const [keep, ...remove] = duplicate.docs;
+      
+      if (remove.length > 0) {
+        await Result.deleteMany({ _id: { $in: remove } });
+        removedCount += remove.length;
+        console.log(`Removed ${remove.length} duplicate(s) for student ${duplicate._id.enrollmentNo}`);
+      }
+    }
+
+    console.log(`Total duplicates removed: ${removedCount}`);
+    return removedCount;
+  } catch (error) {
+    console.error('Error removing duplicates:', error);
+    return 0;
+  }
+}
+
+// List of known supplementary students
+const SUPPLEMENTARY_STUDENTS = [
+  'C24DB774120', 'C24DB774122', 'C24DB774113', 'C24DB774121',
+  'C24DB774022', 'C24DD774034', 'A23DB774057', 'C23DD774069',
+  'C24DD774020', 'C24DB774068', 'A23DC774017', 'A23DC774015'
+];
+
+// Function to check if a student is supplementary
+function isSupplementaryStudent(enrollmentNo) {
+  return SUPPLEMENTARY_STUDENTS.includes(enrollmentNo);
+}
+
 // Connect to MongoDB
 if (!process.env.MONGO_URI) {
   console.error('Error: MONGO_URI environment variable is not set');
@@ -69,15 +134,113 @@ const GRADE_POINTS = {
 
 // Function to calculate SGPA
 function calculateSGPA(subjects) {
+  // Validate input
+  if (!subjects || subjects.length === 0) {
+    console.warn('Warning: No subjects provided for SGPA calculation');
+    return 0;
+  }
+
+  // Check if any subject has grade 'F' - if so, SGPA should be 0
+  const hasFailingGrade = subjects.some(subject => subject.gradePoints === 0);
+  if (hasFailingGrade) {
+    return 0;
+  }
+
   let totalCredits = 0;
   let totalGradePoints = 0;
 
   subjects.forEach(subject => {
-    totalCredits += subject.credits;
-    totalGradePoints += (subject.credits * subject.gradePoints);
+    const credits = Number(subject.credits) || 4; // Default to 4 if invalid
+    const gradePoints = Number(subject.gradePoints) || 0;
+    
+    totalCredits += credits;
+    totalGradePoints += (credits * gradePoints);
   });
 
-  return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
+  return totalCredits > 0 ? parseFloat((totalGradePoints / totalCredits).toFixed(2)) : 0;
+}
+
+// Function to check if update is needed by comparing Excel fields with existing record
+function checkIfUpdateNeeded(existingRecord, newRecord) {
+  const changedFields = [];
+  
+  // Compare SGPA (handle potential NaN/null values)
+  const existingSgpa = parseFloat(existingRecord.sgpa) || 0;
+  const newSgpa = parseFloat(newRecord.sgpa) || 0;
+  if (existingSgpa !== newSgpa) {
+    changedFields.push('sgpa');
+  }
+  
+  // Compare subjects array
+  if (!existingRecord.subjects || existingRecord.subjects.length !== newRecord.subjects.length) {
+    changedFields.push('subjects (count)');
+  } else {
+    // Compare each subject
+    for (let i = 0; i < newRecord.subjects.length; i++) {
+      const existingSubject = existingRecord.subjects.find(s => s.subjectCode === newRecord.subjects[i].subjectCode);
+      const newSubject = newRecord.subjects[i];
+      
+      if (!existingSubject) {
+        changedFields.push(`subjects (${newSubject.subjectCode} - new)`);
+        continue;
+      }
+      
+      // Compare grade
+      if (existingSubject.grade !== newSubject.grade) {
+        changedFields.push(`subjects (${newSubject.subjectCode} - grade)`);
+      }
+      
+      // Compare gradePoints
+      if (existingSubject.gradePoints !== newSubject.gradePoints) {
+        changedFields.push(`subjects (${newSubject.subjectCode} - gradePoints)`);
+      }
+      
+      // Compare marks
+      if (existingSubject.marks) {
+        if (existingSubject.marks.internal !== newSubject.marks.internal) {
+          changedFields.push(`subjects (${newSubject.subjectCode} - internal marks)`);
+        }
+        if (existingSubject.marks.external !== newSubject.marks.external) {
+          changedFields.push(`subjects (${newSubject.subjectCode} - external marks)`);
+        }
+        if (existingSubject.marks.total !== newSubject.marks.total) {
+          changedFields.push(`subjects (${newSubject.subjectCode} - total marks)`);
+        }
+      } else {
+        changedFields.push(`subjects (${newSubject.subjectCode} - marks structure)`);
+      }
+    }
+  }
+  
+  // Compare course information
+  if (existingRecord.course) {
+    if (existingRecord.course.courseCode !== newRecord.course.courseCode) {
+      changedFields.push('course.courseCode');
+    }
+    if (existingRecord.course.courseName !== newRecord.course.courseName) {
+      changedFields.push('course.courseName');
+    }
+  } else {
+    changedFields.push('course (structure)');
+  }
+  
+  // Compare root-level semester and academicYear (required by Result model)
+  const existingSemester = String(existingRecord.semester || '');
+  const newSemester = String(newRecord.semester || '');
+  if (existingSemester !== newSemester) {
+    changedFields.push('semester');
+  }
+  
+  const existingYear = String(existingRecord.academicYear || '');
+  const newYear = String(newRecord.academicYear || '');
+  if (existingYear !== newYear) {
+    changedFields.push('academicYear');
+  }
+  
+  return {
+    required: changedFields.length > 0,
+    changedFields: changedFields
+  };
 }
 
 // Function to fetch student details from database
@@ -88,9 +251,17 @@ async function getStudentDetails(enrollmentNo) {
       console.warn(`Warning: Student not found for enrollment number: ${enrollmentNo}`);
       return null;
     }
+    if (!student.fullName) {
+      console.warn(`Warning: Student ${enrollmentNo} found but missing fullName in database`);
+      return null;
+    }
+    if (!student.fatherName) {
+      console.warn(`Warning: Student ${enrollmentNo} found but missing fatherName in database`);
+      return null;
+    }
     return {
       fatherName: student.fatherName,
-      fullName: student.fullName || null
+      fullName: student.fullName
     };
   } catch (error) {
     console.error(`Error fetching student details for ${enrollmentNo}:`, error);
@@ -127,25 +298,48 @@ function getSubjectCodeFromSheet(sheetName) {
 }
 
 // Function to get subject details from Course model
-async function getSubjectDetails(subjectCode, courseCode) {
+async function getSubjectDetails(subjectCode, preferredCourseCode) {
   try {
-    // Find the course that contains this subject
-    const course = await Course.findOne({
-      courseCode: courseCode,
+    // First try to find the subject in the preferred course
+    let course = await Course.findOne({
+      courseCode: preferredCourseCode,
       'subjects.subjectCode': subjectCode
     });
 
+    // If not found in preferred course, search across all courses
     if (!course) {
-      console.warn(`Warning: Subject ${subjectCode} not found in course ${courseCode}`);
+      console.log(`Subject ${subjectCode} not found in course ${preferredCourseCode}, searching all courses...`);
+      course = await Course.findOne({
+        'subjects.subjectCode': subjectCode
+      });
+    }
+
+    if (!course) {
+      console.warn(`Warning: Subject ${subjectCode} not found in any course`);
       return {
         subjectCode,
         subjectName: `Unknown Subject (${subjectCode})`,
-        credits: 4  // Default credits
+        credits: 4,  // Default credits
+        courseCode: preferredCourseCode,
+        courseName: 'Unknown Course'
       };
     }
 
     // Find the specific subject in the course's subjects array
     const subject = course.subjects.find(s => s.subjectCode === subjectCode);
+    
+    if (!subject) {
+      console.warn(`Warning: Subject ${subjectCode} not found in course ${course.courseCode} subjects array`);
+      return {
+        subjectCode,
+        subjectName: `Unknown Subject (${subjectCode})`,
+        credits: 4,  // Default credits
+        courseCode: course.courseCode,
+        courseName: course.courseName
+      };
+    }
+    
+    console.log(`Found subject ${subjectCode} in course ${course.courseCode}: ${subject.subjectName}`);
     
     return {
       subjectCode: subject.subjectCode,
@@ -189,20 +383,19 @@ async function processSubjectSheet(worksheet, sheetName, courseInfo) {
       return null;
     }
 
-    // Extract course code from the first sheet if not already set
-    if (!courseInfo.courseCode) {
-      const courseCodeMatch = subjectCode.match(/^([A-Z]+)/);
-      if (courseCodeMatch) {
-        courseInfo.courseCode = courseCodeMatch[1];
-        log('INFO', `Extracted course code: ${courseInfo.courseCode} from subject code: ${subjectCode}`);
-      } else {
-        log('ERROR', `Could not extract course code from subject code: ${subjectCode}`);
-        return null;
-      }
+    // Extract course code from current subject code (each subject may have different course)
+    const courseCodeMatch = subjectCode.match(/^([A-Z]+)/);
+    let currentCourseCode;
+    if (courseCodeMatch) {
+      currentCourseCode = courseCodeMatch[1];
+      log('INFO', `Extracted course code: ${currentCourseCode} from subject code: ${subjectCode}`);
+    } else {
+      log('ERROR', `Could not extract course code from subject code: ${subjectCode}`);
+      return null;
     }
 
-    // Get subject details from Course model
-    const subjectInfo = await getSubjectDetails(subjectCode, courseInfo.courseCode);
+    // Get subject details from Course model using the current subject's course code
+    const subjectInfo = await getSubjectDetails(subjectCode, currentCourseCode);
     if (!subjectInfo) {
       log('WARN', `Could not get subject details for: ${subjectCode} in course: ${courseInfo.courseCode}`);
       return null;
@@ -223,20 +416,51 @@ async function processSubjectSheet(worksheet, sheetName, courseInfo) {
     const studentResults = data
       .filter(row => row['Enrollment Number']) // Skip empty rows
       .map(row => {
+        // Handle potential variations in column names
+        const enrollmentNo = row['Enrollment Number'] || row['Enrollment'] || row['EnrollmentNo'];
+        const fullName = row['Full Name'] || row['Name'] || row['Student Name'];
+        const grade = row['Grade'] || 'F';
+        
+        // Handle NaN for grade points - convert NaN to 0 for database storage
+        let gradePoints = Number(row['Grade Points'] || row['GradePoints'] || 0);
+        if (isNaN(gradePoints)) {
+          gradePoints = 0;
+        }
+        
+        // Handle NaN for marks - convert NaN to 0 for database storage
+        let internalMarks = Number(row['Internal Marks'] || row['Internal'] || 0);
+        if (isNaN(internalMarks)) internalMarks = 0;
+        
+        let externalMarks = Number(row['External Marks/70.00'] || row['External Marks'] || row['External'] || 0);
+        if (isNaN(externalMarks)) externalMarks = 0;
+        
+        let totalMarks = Number(row['Total Marks'] || row['Total'] || 0);
+        if (isNaN(totalMarks)) totalMarks = 0;
+
         const result = {
-          enrollmentNo: row['Enrollment Number'],
-          fullName: row['Full Name'],
-          grade: row['Grade'] || 'F',
-          gradePoints: Number(row['Grade Points']) || 0,
+          enrollmentNo: enrollmentNo,
+          fullName: fullName,
+          grade: grade,
+          gradePoints: gradePoints,
           marks: {
-            internal: Number(row['Internal Marks']) || 0,
-            external: Number(row['External Marks/70.00']) || 0,
-            total: Number(row['Total Marks']) || 0
+            internal: internalMarks,
+            external: externalMarks,
+            total: totalMarks
           }
         };
         
-        if (!result.enrollmentNo || !result.fullName) {
-          log('WARN', `Skipping row with missing data`, row);
+        if (!result.enrollmentNo) {
+          log('WARN', `Skipping row with missing enrollment number`, row);
+          return null;
+        }
+        
+        // Validate numeric fields to prevent database errors
+        if (isNaN(result.gradePoints) || isNaN(result.marks.internal) || 
+            isNaN(result.marks.external) || isNaN(result.marks.total)) {
+          log('WARN', `Skipping row with invalid numeric data for ${enrollmentNo}`, {
+            gradePoints: result.gradePoints,
+            marks: result.marks
+          });
           return null;
         }
         
@@ -314,14 +538,32 @@ async function processExcelFile(filePath) {
 
           results.set(studentResult.enrollmentNo, {
             enrollmentNo: studentResult.enrollmentNo,
-            fullName: studentDetails.fullName || studentResult.fullName,
+            fullName: studentDetails.fullName,
             fatherName: studentDetails.fatherName,
-            course: courseInfo,
+            course: {
+              courseCode: subjectInfo.courseCode,
+              courseName: subjectInfo.courseName,
+              semester: courseInfo.semester,
+              academicYear: courseInfo.academicYear
+            },
             subjects: []
           });
         }
 
         const student = results.get(studentResult.enrollmentNo);
+        
+        // Update course info if this subject belongs to a different course
+        if (student.course.courseCode !== subjectInfo.courseCode) {
+          console.log(`Student ${studentResult.enrollmentNo} has subjects from multiple courses: ${student.course.courseCode} and ${subjectInfo.courseCode}`);
+          // Update to the most recent course encountered (could be changed to keep first if preferred)
+          student.course = {
+            courseCode: subjectInfo.courseCode,
+            courseName: subjectInfo.courseName,
+            semester: courseInfo.semester,
+            academicYear: courseInfo.academicYear
+          };
+        }
+        
         student.subjects.push({
           ...subjectInfo,
           grade: studentResult.grade,
@@ -337,8 +579,8 @@ async function processExcelFile(filePath) {
       .map(student => ({
         ...student,
         sgpa: calculateSGPA(student.subjects),
-        semester: courseInfo.semester,
-        academicYear: courseInfo.academicYear
+        semester: student.course.semester,  // Required at root level for Result model
+        academicYear: student.course.academicYear  // Required at root level for Result model
       }));
 
     // Check for existing results and save to database
@@ -347,6 +589,10 @@ async function processExcelFile(filePath) {
       
       const batchSize = 50;
       const results = [];
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      let supplementarySkippedCount = 0;
       
       for (let i = 0; i < finalResults.length; i += batchSize) {
         const batch = finalResults.slice(i, i + batchSize);
@@ -354,31 +600,84 @@ async function processExcelFile(filePath) {
         
         for (const result of batch) {
           try {
-            // Check for existing result
-            const existing = await Result.findOne({
-              enrollmentNo: result.enrollmentNo,
-              'course.semester': result.semester,
-              academicYear: result.academicYear
-            });
-
-            if (existing) {
-              console.log(`Skipping duplicate result for ${result.enrollmentNo} - Semester ${result.semester}`);
+            const isSupplementary = isSupplementaryStudent(result.enrollmentNo);
+            
+            // Skip supplementary students - do not add them to results collection
+            if (isSupplementary) {
+              // Silent skip for supplementary students to reduce noise
+              supplementarySkippedCount++;
               continue;
             }
+            
+            const Model = Result;
+            const collectionName = 'regular';
+            
+            // Check if student already has results for this specific semester, academic year, and course
+            const existingResult = await Model.findOne({
+              enrollmentNo: result.enrollmentNo,
+              semester: result.semester,
+              academicYear: result.academicYear,
+              'course.courseCode': result.course.courseCode
+            });
 
-            // Insert new result
-            const saved = await Result.create(result);
+            let saved;
+            if (existingResult) {
+              // Compare fields that come from Excel sheet to determine if update is needed
+              const needsUpdate = checkIfUpdateNeeded(existingResult, result);
+              
+              if (needsUpdate.required) {
+                // Update existing record with only the changed fields
+                const updateData = {
+                  ...result,
+                  updatedAt: new Date()
+                };
+                
+                saved = await Model.findOneAndUpdate(
+                  {
+                    enrollmentNo: result.enrollmentNo,
+                    semester: result.semester,
+                    academicYear: result.academicYear,
+                    'course.courseCode': result.course.courseCode
+                  },
+                  updateData,
+                  {
+                    new: true,
+                    runValidators: true
+                  }
+                );
+                console.log(`Updated ${collectionName} result for ${result.enrollmentNo} - Course: ${result.course.courseCode}, SGPA: ${result.sgpa}`);
+                console.log(`  Changed fields: ${needsUpdate.changedFields.join(', ')}`);
+                updatedCount++;
+              } else {
+                // No changes needed, skip update
+                saved = existingResult;
+                // Silent skip - no console log to reduce noise
+                skippedCount++;
+              }
+            } else {
+              // Create new record
+              saved = await Model.create(result);
+              console.log(`Created ${collectionName} result for ${result.enrollmentNo} - Course: ${result.course.courseCode}, SGPA: ${result.sgpa}`);
+              createdCount++;
+            }
+
             results.push(saved);
-            console.log(`Saved result for ${result.enrollmentNo} - SGPA: ${result.sgpa}`);
           } catch (error) {
             console.error(`Error processing result for ${result.enrollmentNo}:`, error.message);
           }
         }
       }
 
-      console.log(`\nSuccessfully imported ${results.length} results`);
+      console.log(`\n📊 IMPORT SUMMARY`);
+      console.log('='.repeat(50));
+      console.log(`✅ Total processed: ${results.length} results`);
+      console.log(`🆕 Created: ${createdCount} new records`);
+      console.log(`🔄 Updated: ${updatedCount} existing records`);
+      console.log(`⏭️  Skipped: ${skippedCount} unchanged records`);
+      console.log(`🚫 Supplementary students excluded: ${supplementarySkippedCount} records`);
+      
       if (results.length > 0) {
-        console.log('Sample result:', {
+        console.log('\n📋 Sample result:', {
           enrollmentNo: results[0].enrollmentNo,
           fullName: results[0].fullName,
           semester: results[0].semester,
@@ -397,7 +696,7 @@ async function processExcelFile(filePath) {
 }
 
 // Check if file path is provided
-const excelFilePath = process.argv[2] || 'testing/Students Final Reports with Internal Marks.xlsx';
+const excelFilePath = process.argv[2] || 'Student_Internl_Extenl_Mrks_Results_by_Subject_2025-09-03.xlsx';
 
 // Convert to absolute path if relative
 const absolutePath = path.isAbsolute(excelFilePath) 
@@ -413,7 +712,15 @@ if (!require('fs').existsSync(absolutePath)) {
 
 // Run the script
 console.log(`Processing file: ${absolutePath}`);
-processExcelFile(absolutePath)
+
+// First remove any existing duplicates, then process the file
+removeDuplicateResults()
+  .then((removedCount) => {
+    if (removedCount > 0) {
+      console.log(`Cleaned up ${removedCount} duplicate records before import.`);
+    }
+    return processExcelFile(absolutePath);
+  })
   .then(() => {
     console.log('Import completed successfully');
     process.exit(0);

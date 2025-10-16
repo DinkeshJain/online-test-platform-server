@@ -10,7 +10,10 @@
     "cleanup:dry": "node scripts/cleanup-data.js --cleanup-dry",
     "cleanup:execute": "node scripts/cleanup-data.js --cleanup",
     "migration:testtype:dry": "node scripts/add-testtype-to-submissions.js --dry-run",
-    "migration:testtype:execute": "node scripts/add-testtype-to-submissions.js --execute"
+    "migration:testtype:execute": "node scripts/add-testtype-to-submissions.js --execute",
+    "export:pdf": "node scripts/exportPDF.js",
+    "export:pdf:combined": "node scripts/exportPDF.js --combined-only",
+    "export:pdf:separate": "node scripts/exportPDF.js --separate-only"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +31,7 @@
     "mongoose": "^8.18.1",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+    "puppeteer": "^24.22.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

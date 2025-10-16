@@ -69,6 +69,7 @@ router.get('/student-results/:enrollmentNo', async (req, res) => {
       success: true,
       enrollmentNo,
       studentName: results[0]?.fullName,
+      fatherName: results[0]?.fatherName,
       results: processedResults
     });
 

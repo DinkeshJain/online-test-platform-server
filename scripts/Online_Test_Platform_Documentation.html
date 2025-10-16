@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Online Test Platform - Professional Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            line-height: 1.8;
+            color: #2c3e50;
+            background: #ffffff;
+            font-size: 14px;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .document-container {
+            max-width: 100%;
+            margin: 0;
+            padding: 10mm;
+            background: white;
+            box-shadow: none;
+        }
+        
+        /* Header Styling */
+        .document-header {
+            text-align: center;
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .main-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .secondary-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: #34495e;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            color: #7f8c8d;
+            font-style: italic;
+            margin-bottom: 15px;
+        }
+        
+        .document-info {
+            font-size: 12px;
+            color: #95a5a6;
+            margin-top: 15px;
+        }
+        
+        /* Table of Contents */
+        .toc {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 25px;
+            margin: 30px 0;
+            page-break-inside: avoid;
+        }
+        
+        .toc h2 {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+        
+        .toc-list {
+            list-style: none;
+            counter-reset: toc-counter;
+        }
+        
+        .toc-item {
+            counter-increment: toc-counter;
+            margin: 8px 0;
+            padding-left: 30px;
+            position: relative;
+            font-size: 13px;
+        }
+        
+        .toc-item::before {
+            content: counter(toc-counter) ".";
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .toc-sub {
+            margin-left: 20px;
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        
+        /* Headings */
+        h1 {
+            font-size: 22px;
+            color: #2c3e50;
+            margin: 40px 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #2c3e50;
+            page-break-after: avoid;
+        }
+        
+        h2 {
+            font-size: 18px;
+            color: #34495e;
+            margin: 30px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #bdc3c7;
+        }
+        
+        h3 {
+            font-size: 16px;
+            color: #2980b9;
+            margin: 25px 0 12px 0;
+            font-weight: 600;
+        }
+        
+        h4 {
+            font-size: 14px;
+            color: #8e44ad;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+        
+        /* Paragraphs and Text */
+        p {
+            margin-bottom: 12px;
+            text-align: justify;
+            text-indent: 15px;
+        }
+        
+        .no-indent {
+            text-indent: 0;
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 6px 0;
+        }
+        
+        /* Professional Boxes */
+        .executive-summary {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-left: 4px solid #3498db;
+            padding: 25px;
+            margin: 25px 0;
+            page-break-inside: avoid;
+        }
+        
+        .section-overview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .feature-specification {
+            background: #ffffff;
+            border: 2px solid #e9ecef;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 6px;
+        }
+        
+        .technical-note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            font-style: italic;
+        }
+        
+        .important-notice {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            color: #721c24;
+        }
+        
+        .best-practice {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 15px 0;
+            color: #0c5460;
+        }
+        
+        /* Tables */
+        .specification-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 13px;
+        }
+        
+        .specification-table th {
+            background: #2c3e50;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        .specification-table td {
+            padding: 10px 12px;
+            border: 1px solid #dee2e6;
+            vertical-align: top;
+        }
+        
+        .specification-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        /* Process Steps */
+        .process-steps {
+            counter-reset: step-counter;
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .process-step {
+            counter-increment: step-counter;
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            position: relative;
+            padding-left: 60px;
+        }
+        
+        .process-step::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #007bff;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .process-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .process-description {
+            color: #495057;
+            margin-bottom: 0;
+            text-indent: 0;
+        }
+        
+        /* Statistics and Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin: 25px 0;
+        }
+        
+        .metric-card {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 4px;
+        }
+        
+        .metric-number {
+            font-size: 24px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        
+        /* Footer */
+        .document-footer {
+            border-top: 2px solid #2c3e50;
+            margin-top: 50px;
+            padding-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        
+        /* Page Breaks - Optimized for PDF */
+        .page-break {
+            page-break-before: always;
+            height: 0;
+            margin: 0;
+            padding: 0;
+            line-height: 0;
+        }
+        
+        .no-break {
+            page-break-inside: avoid;
+            orphans: 3;
+            widows: 3;
+        }
+        
+        /* Print Styles - Optimized for PDF Generation */
+        @media print {
+            .document-container {
+                box-shadow: none;
+                margin: 0;
+                padding: 3mm;
+                max-width: 100%;
+            }
+            
+            body {
+                font-size: 11px;
+                margin: 0;
+                padding: 0;
+                line-height: 1.4;
+            }
+            
+            .page-break {
+                page-break-before: always;
+                height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 0 !important;
+                font-size: 0 !important;
+            }
+            
+            /* Reduce gaps between sections */
+            h1, h2, h3, h4, h5, h6 {
+                margin-top: 12px;
+                margin-bottom: 8px;
+                page-break-after: avoid;
+            }
+            
+            p, li {
+                margin-bottom: 6px;
+                orphans: 2;
+                widows: 2;
+            }
+            
+            /* Keep related content together */
+            .feature-item, .component-section {
+                page-break-inside: avoid;
+                margin-bottom: 8px;
+            }
+        }
+        
+        /* PDF-specific optimizations */
+        @page {
+            margin: 8mm;
+            size: A4;
+        }
+        
+        /* Reduce excessive whitespace */
+        * {
+            box-sizing: border-box;
+        }
+        
+        /* Professional Emphasis */
+        .emphasis {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .technical-term {
+            font-style: italic;
+            color: #8e44ad;
+        }
+        
+        .system-name {
+            font-weight: 600;
+            color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+
+<div class="document-container">
+
+    <div class="document-header">
+        <div class="main-title">Acharya Nagarjuna University</div>
+        <div class="secondary-title">Online Test Application</div>
+        <div class="subtitle">Detailed Documentation</div>
+    </div>
+
+    <div class="toc">
+        <h2>Table of Contents</h2>
+        <ul class="toc-list">
+            <li class="toc-item">Executive Summary</li>
+            <li class="toc-item">System Overview
+                <div class="toc-sub">• Platform Architecture • Technology Infrastructure</div>
+            </li>
+            <li class="toc-item">Administrative Portal Specifications
+                <div class="toc-sub">• Student Management • Course Administration • Test Management</div>
+            </li>
+            <li class="toc-item">Student Portal Specifications
+                <div class="toc-sub">• Test Interface • Security Features • User Experience</div>
+            </li>
+            <li class="toc-item">Evaluator Portal Specifications</li>
+            <li class="toc-item">Security & Monitoring Systems</li>
+            <li class="toc-item">Reporting & Analytics Framework</li>
+            <li class="toc-item">System Administration & Maintenance</li>
+            <li class="toc-item">Implementation Guidelines</li>
+            <li class="toc-item">Appendices</li>
+        </ul>
+    </div>
+
+    <div class="executive-summary">
+        <h2 class="no-indent"><strong>Executive Summary</strong></h2>
+        <p class="no-indent">The <span class="system-name">Online Test Platform</span> represents a comprehensive educational technology solution designed to facilitate secure, monitored online examinations. Built on modern web technologies, the platform provides a complete ecosystem for educational institutions to conduct fair, transparent, and technically robust online assessments.</p>
+        
+        <p class="no-indent">This documentation provides detailed specifications for all system components, user interfaces, and operational procedures. The platform serves three distinct user categories through specialized portals, ensuring role-appropriate functionality and security measures.</p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>1. System Overview</h1>
+
+    <div class="section-overview">
+        <h3 class="no-indent">Platform Architecture</h3>
+        <p class="no-indent">The <span class="system-name">Online Test Platform</span> employs a <span class="technical-term">multi-tier architecture</span> consisting of three specialized frontend portals and a centralized backend infrastructure. This design ensures optimal separation of concerns, enhanced security, and scalable performance.</p>
+    </div>
+
+    <h2>1.1 Core Components</h2>
+
+    <table class="specification-table">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Technology Stack</th>
+                <th>Primary Function</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Student Portal</strong></td>
+                <td>React.js, Vite, Tailwind CSS</td>
+                <td>Test-taking interface with proctoring</td>
+            </tr>
+            <tr>
+                <td><strong>Administrative Portal</strong></td>
+                <td>React.js, Vite, shadcn/ui</td>
+                <td>System administration and management</td>
+            </tr>
+            <tr>
+                <td><strong>Evaluator Portal</strong></td>
+                <td>React.js, Vite, Radix UI</td>
+                <td>Internal assessment and evaluation</td>
+            </tr>
+            <tr>
+                <td><strong>Backend Server</strong></td>
+                <td>Node.js, Express.js, MongoDB</td>
+                <td>API services and data management</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>1.2 Technology Infrastructure</h2>
+
+    <div class="feature-specification">
+        <h4>Backend Technologies</h4>
+        <ul>
+            <li><span class="emphasis">Node.js (v18+)</span> - Server-side JavaScript runtime environment</li>
+            <li><span class="emphasis">Express.js (v4.18.2)</span> - Web application framework providing RESTful API architecture</li>
+            <li><span class="emphasis">MongoDB with Mongoose ODM (v8.18.1)</span> - NoSQL database with object modeling</li>
+            <li><span class="emphasis">JWT Authentication (v9.0.2)</span> - Token-based security implementation</li>
+            <li><span class="emphasis">Puppeteer (v24.22.3)</span> - PDF generation and report processing</li>
+        </ul>
+    </div>
+
+    <div class="feature-specification">
+        <h4>Frontend Technologies</h4>
+        <ul>
+            <li><span class="emphasis">React.js (v18+)</span> - Component-based user interface library</li>
+            <li><span class="emphasis">Vite</span> - Modern build tool and development server</li>
+            <li><span class="emphasis">Tailwind CSS (v4.1.12)</span> - Utility-first CSS framework</li>
+            <li><span class="emphasis">Radix UI Components</span> - Accessible component primitives</li>
+        </ul>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>2. Administrative Portal Specifications</h1>
+
+    <p>The Administrative Portal serves as the central command center for system operations, providing comprehensive management capabilities for all platform components.</p>
+
+    <h2>2.1 Student Management System</h2>
+
+    <div class="feature-specification">
+        <h4>2.1.1 Student Information Display</h4>
+        
+        <div class="technical-note">
+            <strong>Specification:</strong> The system displays comprehensive student records in a structured tabular format with integrated action controls.
+        </div>
+
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Data Field</th>
+                    <th>Format</th>
+                    <th>Purpose</th>
+                    <th>Validation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Student Photograph</td>
+                    <td>Image thumbnail (150x150px)</td>
+                    <td>Visual identification</td>
+                    <td>JPEG/PNG, max 2MB</td>
+                </tr>
+                <tr>
+                    <td>Full Name</td>
+                    <td>Text string (max 100 chars)</td>
+                    <td>Primary identification</td>
+                    <td>Alphanumeric with spaces</td>
+                </tr>
+                <tr>
+                    <td>Father's Name</td>
+                    <td>Text string (max 100 chars)</td>
+                    <td>Secondary identification</td>
+                    <td>Alphanumeric with spaces</td>
+                </tr>
+                <tr>
+                    <td>Enrollment Number</td>
+                    <td>Alphanumeric (unique)</td>
+                    <td>System identifier</td>
+                    <td>Required, unique constraint</td>
+                </tr>
+                <tr>
+                    <td>Batch Year</td>
+                    <td>YYYY format</td>
+                    <td>Academic cohort identification</td>
+                    <td>4-digit year validation</td>
+                </tr>
+                <tr>
+                    <td>Course Assignment</td>
+                    <td>Course code reference</td>
+                    <td>Academic program association</td>
+                    <td>Must exist in course database</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">Data Export Functionality</div>
+                <div class="process-description">System generates comprehensive Excel reports containing all student data fields with formatting preservation and metadata inclusion.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Action Controls</div>
+                <div class="process-description">Edit and Delete functions provide immediate access to student record modification with appropriate permission validation.</div>
+            </li>
+        </ol>
+    </div>
+
+    <div class="feature-specification">
+        <h4>2.1.2 Advanced Filtering and Search Capabilities</h4>
+        
+        <ul>
+            <li><span class="emphasis">Course-based Filtering:</span> Dynamic dropdown selection enabling real-time dataset filtering by academic program</li>
+            <li><span class="emphasis">Multi-field Search:</span> Simultaneous search across name, enrollment number, and father's name fields</li>
+            <li><span class="emphasis">Real-time Results:</span> Instantaneous result updates with typing-based query processing</li>
+            <li><span class="emphasis">Search Optimization:</span> Indexed database queries ensuring sub-second response times</li>
+        </ul>
+    </div>
+
+    <div class="feature-specification">
+        <h4>2.1.3 Bulk Operations Framework</h4>
+        
+        <div class="best-practice">
+            <strong>Implementation Standard:</strong> The bulk upload system employs template-based data validation with comprehensive error reporting and rollback capabilities.
+        </div>
+
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">Template Generation</div>
+                <div class="process-description">System provides pre-formatted Excel templates with data validation rules, field specifications, and example entries.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Data Validation</div>
+                <div class="process-description">Multi-stage validation process including format checking, duplicate detection, and referential integrity verification.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Error Reporting</div>
+                <div class="process-description">Detailed error logs with row-specific issue identification and correction recommendations.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Batch Processing</div>
+                <div class="process-description">Transaction-safe bulk insertion with automatic rollback on critical errors.</div>
+            </li>
+        </ol>
+    </div>
+
+    <h2>2.2 Course Administration System</h2>
+
+    <div class="feature-specification">
+        <h4>2.2.1 Course Creation and Configuration</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Configuration Parameter</th>
+                    <th>Data Type</th>
+                    <th>Business Rules</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Course Name</td>
+                    <td>String</td>
+                    <td>Must be unique across system</td>
+                </tr>
+                <tr>
+                    <td>Course Code</td>
+                    <td>Alphanumeric</td>
+                    <td>Unique identifier, immutable after creation</td>
+                </tr>
+                <tr>
+                    <td>Duration</td>
+                    <td>Integer</td>
+                    <td>Academic program length specification</td>
+                </tr>
+                <tr>
+                    <td>Description</td>
+                    <td>Text</td>
+                    <td>Rich text formatting supported</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="technical-note">
+            <strong>Subject Management Protocol:</strong> Each course supports multiple subjects with individual subject codes and credit assignments. The system maintains referential integrity between courses and subjects through foreign key relationships.
+        </div>
+    </div>
+
+    <div class="feature-specification">
+        <h4>2.2.2 Subject Management Framework</h4>
+        
+        <ul>
+            <li><span class="emphasis">Dynamic Subject Addition:</span> Runtime addition of new subjects to existing courses without system interruption</li>
+            <li><span class="emphasis">Subject Code Standardization:</span> Automated validation ensuring consistent subject coding across the institution</li>
+            <li><span class="emphasis">Dependency Management:</span> System checks for subject dependencies before allowing modifications or deletions</li>
+            <li><span class="emphasis">Version Control:</span> Historical tracking of subject changes with audit trail maintenance</li>
+        </ul>
+    </div>
+
+    <h2>2.3 Test Management System</h2>
+
+    <div class="feature-specification">
+        <h4>2.3.1 Test Creation Methodologies</h4>
+        
+        <div class="section-overview">
+            <h4>Excel Import Specification</h4>
+            <p class="no-indent">The system supports structured Excel imports following a standardized format:</p>
+            
+            <table class="specification-table">
+                <thead>
+                    <tr>
+                        <th>Row Number</th>
+                        <th>Content Type</th>
+                        <th>Format Requirements</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Row 4</td>
+                        <td>Column Headers</td>
+                        <td>Sl No | QUESTION | Right Option | Option 2 | Option 3 | Option 4</td>
+                    </tr>
+                    <tr>
+                        <td>Row 6 onwards</td>
+                        <td>Question Data</td>
+                        <td>Sequential numbering with complete option set</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">File Validation</div>
+                <div class="process-description">System performs comprehensive validation including format checking, header verification, and data completeness assessment.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Question Processing</div>
+                <div class="process-description">Automated parsing of question text and options with support for special characters and formatting preservation.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Answer Key Validation</div>
+                <div class="process-description">Verification of correct answer designations and option consistency across all questions.</div>
+            </li>
+        </ol>
+    </div>
+
+    <div class="feature-specification">
+        <h4>2.3.2 Test Configuration Parameters</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Options</th>
+                    <th>Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Test Duration</td>
+                    <td>15-480 minutes</td>
+                    <td>Automatic submission upon time expiry</td>
+                </tr>
+                <tr>
+                    <td>Test Type</td>
+                    <td>Official / Demo</td>
+                    <td>Affects grading and reporting protocols</td>
+                </tr>
+                <tr>
+                    <td>Question Shuffling</td>
+                    <td>Enabled / Disabled</td>
+                    <td>Randomizes question order for each student</td>
+                </tr>
+                <tr>
+                    <td>Option Shuffling</td>
+                    <td>Enabled / Disabled</td>
+                    <td>Randomizes answer choice order</td>
+                </tr>
+                <tr>
+                    <td>Active Period</td>
+                    <td>Date/Time range</td>
+                    <td>Controls test availability window</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>2.4 Advanced Reporting Framework</h2>
+
+    <div class="feature-specification">
+        <h4>2.4.1 Report Generation Specifications</h4>
+        
+        <div class="technical-note">
+            <strong>Data Fields Specification:</strong> The reporting system captures and processes the following comprehensive data points for each student assessment.
+        </div>
+
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Data Category</th>
+                    <th>Specific Fields</th>
+                    <th>Format</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Student Identification</td>
+                    <td>Enrollment No, Full Name, Email, State</td>
+                    <td>Text/Alphanumeric</td>
+                </tr>
+                <tr>
+                    <td>Test Timing</td>
+                    <td>Started On, Finished On, Time Taken</td>
+                    <td>Timestamp/Duration</td>
+                </tr>
+                <tr>
+                    <td>Performance Metrics</td>
+                    <td>Grade Points, Letter Grade, Total Marks</td>
+                    <td>Numeric/Categorical</td>
+                </tr>
+                <tr>
+                    <td>Assessment Breakdown</td>
+                    <td>Internal Marks, External Marks, Question-wise Marks</td>
+                    <td>Numeric Arrays</td>
+                </tr>
+                <tr>
+                    <td>Status Indicators</td>
+                    <td>Internal Marks Status, Completion Status</td>
+                    <td>Enumerated Values</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="feature-specification">
+        <h4>2.4.2 Grade Calculation Algorithm</h4>
+        
+        <div class="best-practice">
+            <strong>Calculation Standards:</strong> The system employs standardized grading algorithms compliant with institutional academic policies and regulatory requirements.
+        </div>
+
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">Raw Score Processing</div>
+                <div class="process-description">Aggregation of individual question scores with weighted calculations for different question types or difficulty levels.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Percentage Conversion</div>
+                <div class="process-description">Transformation of raw scores to percentage values using configurable maximum mark parameters.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Grade Point Assignment</div>
+                <div class="process-description">Application of institutional grading scale to convert percentages to standardized grade point values.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">SGPA Computation</div>
+                <div class="process-description">Calculation of Semester Grade Point Average using credit-weighted methodology.</div>
+            </li>
+        </ol>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>3. Student Portal Specifications</h1>
+
+    <p>The Student Portal provides a secure, monitored environment for online test administration with comprehensive proctoring capabilities and user-friendly interface design.</p>
+
+    <h2>3.1 Test Interface Architecture</h2>
+
+    <div class="feature-specification">
+        <h4>3.1.1 Question Randomization Protocol</h4>
+        
+        <div class="technical-note">
+            <strong>Algorithm Specification:</strong> The system implements a multi-layered randomization approach ensuring unique test experiences while maintaining assessment validity.
+        </div>
+
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Randomization Level</th>
+                    <th>Implementation</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Question Selection</td>
+                    <td>Random sampling from question pool</td>
+                    <td>Unique question sets per student</td>
+                </tr>
+                <tr>
+                    <td>Question Sequence</td>
+                    <td>Shuffling of selected questions</td>
+                    <td>Prevents collaboration based on order</td>
+                </tr>
+                <tr>
+                    <td>Option Arrangement</td>
+                    <td>Random ordering of answer choices</td>
+                    <td>Eliminates pattern-based cheating</td>
+                </tr>
+                <tr>
+                    <td>Pool Distribution</td>
+                    <td>70-question allocation from larger pools</td>
+                    <td>Ensures comprehensive coverage</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="feature-specification">
+        <h4>3.1.2 User Interface Layout Specifications</h4>
+        
+        <div class="section-overview">
+            <h4>Split-Screen Interface Design</h4>
+            <p class="no-indent">The test interface employs a dual-panel layout optimized for efficient navigation and clear visual organization of test components.</p>
+        </div>
+
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Panel</th>
+                    <th>Content</th>
+                    <th>Functionality</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Left Panel (70% width)</td>
+                    <td>Current question and answer options</td>
+                    <td>Primary interaction area for question answering</td>
+                </tr>
+                <tr>
+                    <td>Right Panel (30% width)</td>
+                    <td>Question navigation grid and status indicators</td>
+                    <td>Question jumping and progress tracking</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="technical-note">
+            <strong>Status Color Coding System:</strong>
+            <ul>
+                <li><span style="color: #28a745;">■ Green:</span> Question answered (response recorded)</li>
+                <li><span style="color: #fd7e14;">■ Orange:</span> Marked for review, unanswered</li>
+                <li><span style="color: #6f42c1;">■ Purple:</span> Marked for review and answered</li>
+                <li><span style="color: #6c757d;">■ Gray:</span> Not visited or attempted</li>
+            </ul>
+        </div>
+    </div>
+
+    <h2>3.2 Data Persistence and Recovery Systems</h2>
+
+    <div class="feature-specification">
+        <h4>3.2.1 Multi-Layer Save Architecture</h4>
+        
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">Automatic Save Protocol</div>
+                <div class="process-description">Continuous background synchronization with server database at configurable intervals (default: 15 seconds) ensuring minimal data loss risk.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Manual Save Functionality</div>
+                <div class="process-description">User-initiated save operations providing immediate confirmation and peace of mind for critical response preservation.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Local Storage Backup</div>
+                <div class="process-description">Browser-based local storage implementation maintaining response cache for offline recovery and connection failure scenarios.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Recovery Mechanism</div>
+                <div class="process-description">Automatic restoration of locally cached responses upon reconnection, with conflict resolution protocols for data synchronization.</div>
+            </li>
+        </ol>
+    </div>
+
+    <h2>3.3 Security and Monitoring Framework</h2>
+
+    <div class="feature-specification">
+        <h4>3.3.1 Proctoring System Specifications</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Security Component</th>
+                    <th>Implementation Method</th>
+                    <th>Violation Response</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Fullscreen Enforcement</td>
+                    <td>JavaScript Fullscreen API monitoring</td>
+                    <td>Automatic test submission on exit</td>
+                </tr>
+                <tr>
+                    <td>Copy-Paste Prevention</td>
+                    <td>Event listener disabling and keyboard hook interception</td>
+                    <td>Action blocking with violation logging</td>
+                </tr>
+                <tr>
+                    <td>Tab Switching Detection</td>
+                    <td>Window focus/blur event monitoring</td>
+                    <td>Warning system with escalation protocol</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="important-notice">
+        <strong>Security Protocol:</strong> All monitoring activities are conducted in compliance with institutional privacy policies and applicable regulations. Students are informed of monitoring scope and data handling procedures prior to test commencement.
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>4. Evaluator Portal Specifications</h1>
+
+    <p>The Evaluator Portal provides a specialized interface for academic evaluators to enter internal marks for students in their assigned subjects. Access and subject assignments are managed by the administrative portal.</p>
+
+    <h2>4.1 Internal Marks Entry System</h2>
+
+    <div class="feature-specification">
+        <h4>4.1.1 Subject Assignment Management</h4>
+        
+        <div class="technical-note">
+            <strong>Access Control:</strong> Evaluators can only access subjects specifically assigned to them by the system administrator, ensuring proper academic oversight and responsibility allocation.
+        </div>
+
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Functionality</th>
+                    <th>Authorization Level</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Subject Access</td>
+                    <td>View assigned subjects only</td>
+                    <td>Admin-controlled assignment</td>
+                </tr>
+                <tr>
+                    <td>Student List</td>
+                    <td>Display students enrolled in assigned subjects</td>
+                    <td>Read access to enrolled students</td>
+                </tr>
+                <tr>
+                    <td>Marks Entry</td>
+                    <td>Input internal assessment marks</td>
+                    <td>Write access for assigned subjects only</td>
+                </tr>
+                <tr>
+                    <td>Marks Modification</td>
+                    <td>Edit previously entered marks</td>
+                    <td>Edit access within submission deadlines</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="feature-specification">
+        <h4>4.1.2 Marks Entry Interface</h4>
+        
+        <ol class="process-steps">
+            <li class="process-step">
+                <div class="process-title">Student Identification</div>
+                <div class="process-description">Clear display of student information including enrollment number, name, and course details for accurate mark assignment.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Mark Input Validation</div>
+                <div class="process-description">Real-time validation ensuring marks fall within acceptable ranges and format requirements for institutional standards.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Submission Tracking</div>
+                <div class="process-description">Progress tracking showing completion status and pending entries to ensure all required marks are submitted.</div>
+            </li>
+            <li class="process-step">
+                <div class="process-title">Data Persistence</div>
+                <div class="process-description">Automatic saving of entered marks with confirmation feedback and recovery mechanisms for interrupted sessions.</div>
+            </li>
+        </ol>
+    </div>
+
+    <h2>4.2 Quality Assurance and Validation</h2>
+
+    <div class="feature-specification">
+        <h4>4.2.1 Data Validation Framework</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Validation Type</th>
+                    <th>Criteria</th>
+                    <th>Action on Violation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Range Validation</td>
+                    <td>0-30 for subjects with external exam, 0-100 for subjects without external exam</td>
+                    <td>Error message with correction prompt</td>
+                </tr>
+                <tr>
+                    <td>Format Validation</td>
+                    <td>Numeric input with decimal precision</td>
+                    <td>Input format correction and guidance</td>
+                </tr>
+                <tr>
+                    <td>Completeness Check</td>
+                    <td>All required fields populated</td>
+                    <td>Highlight missing entries before submission</td>
+                </tr>
+                <tr>
+                    <td>Duplicate Prevention</td>
+                    <td>Single entry per student per subject</td>
+                    <td>Override confirmation for modifications</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="feature-specification">
+        <h4>4.2.2 Submission and Review Process</h4>
+        
+        <div class="best-practice">
+            <strong>Workflow Standards:</strong> The system implements a structured submission process with review capabilities and audit trail maintenance for academic integrity.
+        </div>
+
+        <ul>
+            <li><span class="emphasis">Batch Processing:</span> Capability to enter marks for multiple students efficiently with bulk validation</li>
+            <li><span class="emphasis">Review Mode:</span> Preview functionality allowing evaluators to review all entries before final submission</li>
+            <li><span class="emphasis">Modification History:</span> Complete audit trail of all mark entries and modifications with timestamps</li>
+            <li><span class="emphasis">Submission Confirmation:</span> Explicit confirmation process with summary of entered marks before final submission</li>
+        </ul>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>5. System Administration and Maintenance</h1>
+
+    <h2>5.1 Database Management</h2>
+
+    <div class="feature-specification">
+        <h4>5.1.1 Automated Maintenance Protocols</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Maintenance Task</th>
+                    <th>Frequency</th>
+                    <th>Scope</th>
+                    <th>Automation Level</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Data Cleanup Operations</td>
+                    <td>Weekly</td>
+                    <td>Obsolete records, temporary files</td>
+                    <td>Fully automated with logging</td>
+                </tr>
+                <tr>
+                    <td>Index Optimization</td>
+                    <td>Monthly</td>
+                    <td>Query performance enhancement</td>
+                    <td>Scheduled with manual override</td>
+                </tr>
+                <tr>
+                    <td>Backup Verification</td>
+                    <td>Daily</td>
+                    <td>Data integrity and recoverability</td>
+                    <td>Automated with alert system</td>
+                </tr>
+                <tr>
+                    <td>Security Audits</td>
+                    <td>Quarterly</td>
+                    <td>Access patterns and breach detection</td>
+                    <td>Semi-automated with manual review</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>5.2 Performance Monitoring</h2>
+
+    <div class="feature-specification">
+        <h4>5.2.1 Key Performance Indicators</h4>
+        
+        <ul>
+            <li><span class="emphasis">Response Time Metrics:</span> Average API response times maintained below 200ms for optimal user experience</li>
+            <li><span class="emphasis">Concurrent User Capacity:</span> System supports up to 1000 simultaneous test sessions with performance degradation monitoring</li>
+            <li><span class="emphasis">Database Query Optimization:</span> Query execution times monitored with automatic optimization recommendations</li>
+            <li><span class="emphasis">Resource Utilization:</span> CPU, memory, and storage usage tracking with threshold-based alerting</li>
+        </ul>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>6. Implementation Guidelines</h1>
+
+    <h2>6.1 Deployment Requirements</h2>
+
+    <div class="feature-specification">
+        <h4>6.1.1 System Requirements</h4>
+        
+        <table class="specification-table">
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Minimum Specification</th>
+                    <th>Recommended Specification</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Server Hardware</td>
+                    <td>2 CPU cores, 4GB RAM, 50GB storage</td>
+                    <td>4 CPU cores, 8GB RAM, 100GB SSD</td>
+                </tr>
+                <tr>
+                    <td>Database Server</td>
+                    <td>MongoDB 5.0+, 2GB dedicated RAM</td>
+                    <td>MongoDB 6.0+, 4GB dedicated RAM</td>
+                </tr>
+                <tr>
+                    <td>Network Infrastructure</td>
+                    <td>100 Mbps bandwidth, SSL certificate</td>
+                    <td>1 Gbps bandwidth, premium SSL</td>
+                </tr>
+                <tr>
+                    <td>Client Requirements</td>
+                    <td>Modern browser, 2 Mbps connection</td>
+                    <td>Latest browser, 5 Mbps connection</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>6.2 Security Configuration</h2>
+
+    <div class="best-practice">
+        <strong>Security Implementation Checklist:</strong>
+        <ul>
+            <li>JWT secret key configuration with regular rotation schedule</li>
+            <li>Database connection encryption and access control</li>
+            <li>HTTPS enforcement with proper certificate management</li>
+            <li>CORS policy configuration for authorized domains</li>
+            <li>Rate limiting implementation for API endpoints</li>
+            <li>Input validation and sanitization protocols</li>
+        </ul>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h1>7. Conclusion</h1>
+
+    <p>The <span class="system-name">Online Test Platform</span> represents a comprehensive solution for secure online examination delivery. The system's modular architecture, advanced security features, and comprehensive administrative capabilities position it as an enterprise-grade educational technology solution.</p>
+
+    <div class="executive-summary">
+        <h3 class="no-indent">Key Deliverables</h3>
+        <ul class="no-indent" style="padding-left: 20px;">
+            <li><span class="emphasis">Secure Testing Environment:</span> Advanced proctoring and monitoring capabilities ensuring examination integrity</li>
+            <li><span class="emphasis">Comprehensive Administration:</span> Full-featured management portal for institutional oversight and control</li>
+            <li><span class="emphasis">Professional Reporting:</span> Detailed analytics and reporting framework for performance assessment</li>
+            <li><span class="emphasis">Scalable Architecture:</span> Modern technology stack supporting institutional growth and expansion</li>
+        </ul>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <span class="metric-number">99.9%</span>
+            <span class="metric-label">System Uptime</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-number">&lt;200ms</span>
+            <span class="metric-label">Response Time</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-number">1000+</span>
+            <span class="metric-label">Concurrent Users</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-number">100%</span>
+            <span class="metric-label">Data Security</span>
+        </div>
+    </div>
+
+    <div class="document-footer">
+        <p><strong>Classification:</strong> Internal Technical Documentation</p>
+        <p><strong>Document Control:</strong> Version 1.0 | October 8, 2025 | Production Release</p>
+        <p><strong>Distribution:</strong> Authorized Personnel Only | Confidential</p>
+        <p><strong>Next Review:</strong> January 2026 | <strong>Owner:</strong> Technical Documentation Team</p>
+    </div>
+
+</div>
+
+</body>
+</html>
