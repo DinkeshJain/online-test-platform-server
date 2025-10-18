@@ -5,6 +5,7 @@ const InternalMarks = require('../models/InternalMarks');
 const Submission = require('../models/Submission');
 const Test = require('../models/Test');
 const Result = require('../models/Result');
+const SupplementaryResult = require('../models/SupplementaryResult');
 
 const router = express.Router();
 
@@ -61,6 +62,7 @@ router.get('/student-results/:enrollmentNo', async (req, res) => {
         subjectName: subject.subjectName,
         credits: subject.credits,
         grade: subject.grade,
+        gradePoints: subject.gradePoints,
         marks: subject.marks
       }))
     }));
@@ -78,6 +80,86 @@ router.get('/student-results/:enrollmentNo', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Server error while fetching results' 
+    });
+  }
+});
+
+// Get supplementary student results
+router.get('/supplementary-results/:enrollmentNo', async (req, res) => {
+  try {
+    const { enrollmentNo } = req.params;
+
+    // Fetch all supplementary results for the student
+    const results = await SupplementaryResult.find({ enrollmentNo })
+      .sort({
+        'course.semester': 1,
+        academicYear: 1
+      });
+
+    if (!results || results.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No supplementary results found for this enrollment number' 
+      });
+    }
+
+    // Subject filtering configuration
+    const subjectFilters = {
+      'C23DD774069': ['P03'],
+      'C24DD774020': ['P05', 'P06', 'P08'],
+      'C24DD774034': ['P05'],
+      'A23DC774015': ['P01', 'P02'],
+      'A23DC774017': ['P01'],
+      'A23DB774057': ['P01', 'P02', 'P03', 'P04'],
+      'C24DB774022': ['P01'],
+      'C24DB774068': ['P01'],
+      'C24DB774113': ['P01', 'P02', 'P03', 'P04'],
+      'C24DB774120': ['P01', 'P02', 'P03', 'P04'],
+      'C24DB774121': ['P01', 'P02', 'P03', 'P04'],
+      'C24DB774122': ['P01', 'P02', 'P03', 'P04']
+    };
+
+    // Function to filter subjects based on enrollment number
+    const filterSubjects = (enrollmentNo, subjects) => {
+      const allowedSubjects = subjectFilters[enrollmentNo];
+      if (!allowedSubjects) {
+        return subjects;
+      }
+      return subjects.filter(subject => {
+        return allowedSubjects.some(allowed => subject.subjectCode.includes(allowed));
+      });
+    };
+
+    // Process results with subject filtering
+    const processedResults = results.map(result => ({
+      semester: result.course.semester,
+      academicYear: result.academicYear,
+      courseCode: result.course.courseCode,
+      courseName: result.course.courseName,
+      sgpa: result.sgpa,
+      subjects: filterSubjects(enrollmentNo, result.subjects).map(subject => ({
+        subjectCode: subject.subjectCode,
+        subjectName: subject.subjectName,
+        credits: subject.credits,
+        grade: subject.grade,
+        gradePoints: subject.gradePoints,
+        marks: subject.marks
+      }))
+    }));
+
+    res.json({
+      success: true,
+      enrollmentNo,
+      studentName: results[0]?.fullName,
+      fatherName: results[0]?.fatherName,
+      results: processedResults
+    });
+
+  } catch (error) {
+    console.error('Error fetching supplementary results:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while fetching supplementary results' 
     });
   }
 });
