@@ -31,79 +31,12 @@ router.get('/courses-with-results', async (req, res) => {
   }
 });
 
-// Get student results
+// Get student results (combined regular and supplementary)
 router.get('/student-results/:enrollmentNo', async (req, res) => {
   try {
     const { enrollmentNo } = req.params;
 
-    // Fetch all results for the student
-    const results = await Result.find({ enrollmentNo })
-      .sort({
-        'course.semester': 1, // Sort by semester
-        academicYear: 1      // Then by academic year
-      });
-
-    if (!results || results.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'No results found for this enrollment number' 
-      });
-    }
-
-    // Process results to include semester-wise data
-    const processedResults = results.map(result => ({
-      semester: result.course.semester,
-      academicYear: result.academicYear,
-      courseCode: result.course.courseCode,
-      courseName: result.course.courseName,
-      sgpa: result.sgpa,
-      subjects: result.subjects.map(subject => ({
-        subjectCode: subject.subjectCode,
-        subjectName: subject.subjectName,
-        credits: subject.credits,
-        grade: subject.grade,
-        gradePoints: subject.gradePoints,
-        marks: subject.marks
-      }))
-    }));
-
-    res.json({
-      success: true,
-      enrollmentNo,
-      studentName: results[0]?.fullName,
-      fatherName: results[0]?.fatherName,
-      results: processedResults
-    });
-
-  } catch (error) {
-    console.error('Error fetching student results:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error while fetching results' 
-    });
-  }
-});
-
-// Get supplementary student results
-router.get('/supplementary-results/:enrollmentNo', async (req, res) => {
-  try {
-    const { enrollmentNo } = req.params;
-
-    // Fetch all supplementary results for the student
-    const results = await SupplementaryResult.find({ enrollmentNo })
-      .sort({
-        'course.semester': 1,
-        academicYear: 1
-      });
-
-    if (!results || results.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'No supplementary results found for this enrollment number' 
-      });
-    }
-
-    // Subject filtering configuration
+    // Subject filtering configuration for supplementary results
     const subjectFilters = {
       'C23DD774069': ['P03'],
       'C24DD774020': ['P05', 'P06', 'P08'],
@@ -119,7 +52,7 @@ router.get('/supplementary-results/:enrollmentNo', async (req, res) => {
       'C24DB774122': ['P01', 'P02', 'P03', 'P04']
     };
 
-    // Function to filter subjects based on enrollment number
+    // Function to filter subjects for supplementary results
     const filterSubjects = (enrollmentNo, subjects) => {
       const allowedSubjects = subjectFilters[enrollmentNo];
       if (!allowedSubjects) {
@@ -130,36 +63,96 @@ router.get('/supplementary-results/:enrollmentNo', async (req, res) => {
       });
     };
 
-    // Process results with subject filtering
-    const processedResults = results.map(result => ({
-      semester: result.course.semester,
-      academicYear: result.academicYear,
-      courseCode: result.course.courseCode,
-      courseName: result.course.courseName,
-      sgpa: result.sgpa,
-      subjects: filterSubjects(enrollmentNo, result.subjects).map(subject => ({
-        subjectCode: subject.subjectCode,
-        subjectName: subject.subjectName,
-        credits: subject.credits,
-        grade: subject.grade,
-        gradePoints: subject.gradePoints,
-        marks: subject.marks
-      }))
-    }));
+    // Fetch regular results
+    const regularResults = await Result.find({ enrollmentNo })
+      .sort({
+        'course.semester': 1,
+        academicYear: 1
+      });
+
+    // Fetch supplementary results
+    const supplementaryResults = await SupplementaryResult.find({ enrollmentNo })
+      .sort({
+        'course.semester': 1,
+        academicYear: 1
+      });
+
+    // Check if any results found
+    if ((!regularResults || regularResults.length === 0) && 
+        (!supplementaryResults || supplementaryResults.length === 0)) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No results found for this enrollment number' 
+      });
+    }
+
+    let allResults = [];
+    let studentName = '';
+    let fatherName = '';
+
+    // Process regular results
+    if (regularResults && regularResults.length > 0) {
+      studentName = regularResults[0]?.fullName || '';
+      fatherName = regularResults[0]?.fatherName || '';
+
+      const processedRegular = regularResults.map(result => ({
+        type: 'regular',
+        semester: result.course.semester,
+        academicYear: result.academicYear,
+        courseCode: result.course.courseCode,
+        courseName: result.course.courseName,
+        sgpa: result.sgpa,
+        subjects: result.subjects.map(subject => ({
+          subjectCode: subject.subjectCode,
+          subjectName: subject.subjectName,
+          credits: subject.credits,
+          grade: subject.grade,
+          gradePoints: subject.gradePoints,
+          marks: subject.marks
+        }))
+      }));
+      allResults = [...allResults, ...processedRegular];
+    }
+
+    // Process supplementary results with filtering
+    if (supplementaryResults && supplementaryResults.length > 0) {
+      if (!studentName) {
+        studentName = supplementaryResults[0]?.fullName || '';
+        fatherName = supplementaryResults[0]?.fatherName || '';
+      }
+
+      const processedSupplementary = supplementaryResults.map(result => ({
+        type: 'supplementary',
+        semester: result.course.semester,
+        academicYear: result.academicYear,
+        courseCode: result.course.courseCode,
+        courseName: result.course.courseName,
+        sgpa: result.sgpa,
+        subjects: filterSubjects(enrollmentNo, result.subjects).map(subject => ({
+          subjectCode: subject.subjectCode,
+          subjectName: subject.subjectName,
+          credits: subject.credits,
+          grade: subject.grade,
+          gradePoints: subject.gradePoints,
+          marks: subject.marks
+        }))
+      }));
+      allResults = [...allResults, ...processedSupplementary];
+    }
 
     res.json({
       success: true,
       enrollmentNo,
-      studentName: results[0]?.fullName,
-      fatherName: results[0]?.fatherName,
-      results: processedResults
+      studentName,
+      fatherName,
+      results: allResults
     });
 
   } catch (error) {
-    console.error('Error fetching supplementary results:', error);
+    console.error('Error fetching student results:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Server error while fetching supplementary results' 
+      message: 'Server error while fetching results' 
     });
   }
 });
