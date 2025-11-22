@@ -355,16 +355,71 @@ router.get('/', auth, async (req, res) => {
 });
 
 
-// Get all tests for admin (including inactive ones)
+// Get all tests for admin (including inactive ones) with pagination
 router.get('/admin', adminAuth, async (req, res) => {
   try {
-    // Test basic query first
-    const testCount = await Test.countDocuments();    
-    const tests = await Test.find()
-      .select('-createdBy') // Exclude createdBy field
-      .sort({ createdAt: -1 });
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      courseCode,
+      testType,
+      status
+    } = req.query;
 
-    const response = { tests };    
+    // Build filter object
+    const filter = {};
+    
+    if (search) {
+      filter.$or = [
+        { 'subject.subjectName': { $regex: search, $options: 'i' } },
+        { 'subject.subjectCode': { $regex: search, $options: 'i' } },
+        { courseCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    if (courseCode && courseCode !== 'all') {
+      filter.courseCode = courseCode;
+    }
+    
+    if (testType && testType !== 'all') {
+      filter.testType = testType;
+    }
+    
+    if (status && status !== 'all') {
+      if (status === 'active') {
+        filter.isActive = true;
+      } else if (status === 'inactive') {
+        filter.isActive = false;
+      }
+    }
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Cap at 100
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get total count for pagination
+    const total = await Test.countDocuments(filter);
+    
+    // Get tests with pagination
+    const tests = await Test.find(filter)
+      .select('-createdBy') // Exclude createdBy field
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const response = {
+      tests,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1
+      }
+    };
+    
     res.json(response);
   } catch (error) {
     console.error('Get admin tests error:', error);
@@ -675,6 +730,43 @@ router.delete('/:id', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('Delete test error:', error);
     res.status(500).json({ message: 'Server error while deleting test' });
+  }
+});
+
+// Search tests endpoint for better performance
+router.get('/search', adminAuth, async (req, res) => {
+  try {
+    const { q, limit = 20, courseCode, testType } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.json({ tests: [], message: 'Search query too short' });
+    }
+
+    const filter = {
+      $or: [
+        { 'subject.subjectName': { $regex: q, $options: 'i' } },
+        { 'subject.subjectCode': { $regex: q, $options: 'i' } },
+        { courseCode: { $regex: q, $options: 'i' } }
+      ]
+    };
+    
+    if (courseCode && courseCode !== 'all') {
+      filter.courseCode = courseCode;
+    }
+    
+    if (testType && testType !== 'all') {
+      filter.testType = testType;
+    }
+
+    const tests = await Test.find(filter)
+      .select('subject courseCode testType isActive questions duration createdAt')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    res.json({ tests });
+  } catch (error) {
+    console.error('Test search error:', error);
+    res.status(500).json({ message: 'Server error while searching tests' });
   }
 });
 

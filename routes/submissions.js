@@ -522,25 +522,166 @@ router.get('/admin', adminAuth, async (req, res) => {
   }
 });
 
-// ✅ FIXED: Get course results for admin - added missing await
+// Get course results for admin with pagination
 router.get('/course-results', adminAuth, async (req, res) => {
   try {
     const Course = require('../models/Course');
     const Student = require('../models/Student');
+    
+    const {
+      page,
+      limit,
+      courseCode,
+      search
+    } = req.query;
 
-    const courses = await Course.find({ isActive: { $ne: false } }).sort({ courseCode: 1 });
+    // Build course filter
+    let courseFilter = { isActive: { $ne: false } };
+    if (courseCode && courseCode !== 'all') {
+      courseFilter.courseCode = courseCode;
+    }
+    if (search) {
+      courseFilter.$or = [
+        { courseName: { $regex: search, $options: 'i' } },
+        { courseCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // If pagination is requested
+    if (page && limit) {
+      const pageNum = Math.max(1, parseInt(page));
+      const limitNum = Math.min(50, Math.max(1, parseInt(limit))); // Cap at 50 courses
+      const skip = (pageNum - 1) * limitNum;
+
+      const total = await Course.countDocuments(courseFilter);
+      const courses = await Course.find(courseFilter)
+        .sort({ courseCode: 1 })
+        .skip(skip)
+        .limit(limitNum);
+
+      const courseResults = [];
+      
+      for (const course of courses) {
+        const students = await Student.find({ course: course.courseCode })
+          .sort({ enrollmentNo: 1 })
+          .select('enrollmentNo fullName username emailId');
+
+        if (students.length === 0) continue;
+
+        const tests = await Test.find({ courseCode: course.courseCode })
+          .sort({ 'subject.subjectCode': 1, createdAt: 1 });
+
+        const testsBySubject = {};
+        tests.forEach(test => {
+          const subjectKey = test.subject?.subjectCode || 'unknown';
+          if (!testsBySubject[subjectKey]) {
+            testsBySubject[subjectKey] = {
+              subjectCode: test.subject?.subjectCode || 'unknown',
+              subjectName: test.subject?.subjectName || 'Unknown Subject',
+              tests: []
+            };
+          }
+          testsBySubject[subjectKey].tests.push(test);
+        });
+
+        const subjects = Object.values(testsBySubject);
+        const studentResults = [];
+
+        for (const student of students) {
+          const subjectResults = [];
+
+          for (const subject of subjects) {
+            let totalTestScore = 0;
+            let totalPossibleScore = 0;
+            let hasAttemptedAnyTest = false;
+
+            for (const test of subject.tests) {
+              try {
+                const submission = await Submission.findOne({
+                  testId: test._id,
+                  userId: student._id,
+                  enrollmentNo: student.enrollmentNo,
+                  course: course.courseCode,
+                  isDraft: false,
+                  isCompleted: true
+                });
+
+                if (submission) {
+                  totalTestScore += submission.score || 0;
+                  hasAttemptedAnyTest = true;
+                }
+                totalPossibleScore += test.questions?.length || 0;
+              } catch (submissionError) {
+                console.error('Error fetching submission for student:', student.enrollmentNo, 'test:', test._id, submissionError);
+              }
+            }
+
+            let internalMark = null;
+            try {
+              internalMark = await InternalMarks.findOne({
+                studentId: student._id,
+                courseId: course._id,
+                subjectCode: subject.subjectCode
+              });
+            } catch (internalMarkError) {
+              console.error('Error fetching internal marks for student:', student.enrollmentNo, 'subject:', subject.subjectCode, internalMarkError);
+            }
+
+            subjectResults.push({
+              subjectCode: subject.subjectCode,
+              subjectName: subject.subjectName,
+              testScore: hasAttemptedAnyTest ? totalTestScore : null,
+              totalPossibleTestScore: totalPossibleScore,
+              internalMarks: internalMark ? internalMark.internalMarks : null,
+              internalMarksComments: internalMark ? internalMark.evaluatorComments : null
+            });
+          }
+
+          studentResults.push({
+            enrollmentNo: student.enrollmentNo,
+            fullName: student.fullName,
+            username: student.username,
+            emailId: student.emailId,
+            subjectResults: subjectResults
+          });
+        }
+
+        courseResults.push({
+          courseId: course._id,
+          courseCode: course.courseCode,
+          courseName: course.courseName,
+          students: studentResults,
+          subjects: subjects.map(s => ({ subjectCode: s.subjectCode, subjectName: s.subjectName })),
+          resultsReleased: course.resultsReleased || false
+        });
+      }
+
+      res.json({
+        courseResults,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+          hasNext: pageNum * limitNum < total,
+          hasPrev: pageNum > 1
+        }
+      });
+      return;
+    }
+
+    // Legacy: Return all courses (backward compatibility)
+    const courses = await Course.find(courseFilter).sort({ courseCode: 1 });
     const courseResults = [];
 
     for (const course of courses) {
-      // ✅ FIXED: Added missing await
       const students = await Student.find({ course: course.courseCode })
         .sort({ enrollmentNo: 1 })
         .select('enrollmentNo fullName username emailId');
 
       if (students.length === 0) continue;
 
-      const tests = await Test.find({ course: course.courseCode })
-        .populate('course', 'courseCode courseName')
+      const tests = await Test.find({ courseCode: course.courseCode })
         .sort({ 'subject.subjectCode': 1, createdAt: 1 });
 
       const testsBySubject = {};
@@ -572,8 +713,8 @@ router.get('/course-results', adminAuth, async (req, res) => {
               const submission = await Submission.findOne({
                 testId: test._id,
                 userId: student._id,
-                enrollmentNo: student.enrollmentNo, // Use denormalized field
-                course: course.courseCode, // Use denormalized field
+                enrollmentNo: student.enrollmentNo,
+                course: course.courseCode,
                 isDraft: false,
                 isCompleted: true
               });
@@ -618,29 +759,20 @@ router.get('/course-results', adminAuth, async (req, res) => {
         });
       }
 
-      const resultsReleased = course.resultsReleased || false;
-
       courseResults.push({
         courseId: course._id,
         courseCode: course.courseCode,
         courseName: course.courseName,
-        subjects: subjects.map(s => ({
-          subjectCode: s.subjectCode,
-          subjectName: s.subjectName,
-          maxMarks: 100
-        })),
         students: studentResults,
-        resultsReleased: resultsReleased
+        subjects: subjects.map(s => ({ subjectCode: s.subjectCode, subjectName: s.subjectName })),
+        resultsReleased: course.resultsReleased || false
       });
     }
 
     res.json({ courseResults });
   } catch (error) {
-    console.error('Get course results error:', error);
-    res.status(500).json({
-      message: 'Server error while fetching course results',
-      error: error.message
-    });
+    console.error('Error fetching course results:', error);
+    res.status(500).json({ message: 'Server error while fetching course results' });
   }
 });
 
@@ -673,25 +805,66 @@ router.post('/fullscreen-exit', auth, async (req, res) => {
   }
 });
 
-// Get reports data for course and subject analysis
+// Get reports data for course and subject analysis with pagination
 router.get('/reports/course-subject', adminAuth, async (req, res) => {
   try {
     const Course = require('../models/Course');
     const Student = require('../models/Student');
+    
+    const {
+      page,
+      limit,
+      courseCode,
+      subjectCode,
+      search
+    } = req.query;
 
-    const courses = await Course.find({ isActive: { $ne: false } }).populate('subjects');
+    // Build course filter
+    let courseFilter = { isActive: { $ne: false } };
+    if (courseCode && courseCode !== 'all') {
+      courseFilter.courseCode = courseCode;
+    }
+    if (search) {
+      courseFilter.$or = [
+        { courseName: { $regex: search, $options: 'i' } },
+        { courseCode: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const courses = await Course.find(courseFilter).populate('subjects');
     const reports = [];
+
+    let reportCount = 0;
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 20;
+    const skip = (pageNum - 1) * limitNum;
 
     for (const course of courses) {
       for (const subject of course.subjects) {
+        // Skip if subject filter is applied and doesn't match
+        if (subjectCode && subjectCode !== 'all' && subject.subjectCode !== subjectCode) {
+          continue;
+        }
+
+        // Pagination logic - skip items before current page
+        if (page && limit) {
+          if (reportCount < skip) {
+            reportCount++;
+            continue;
+          }
+          if (reportCount >= skip + limitNum) {
+            break;
+          }
+        }
+
         const tests = await Test.find({
-          course: course._id,
+          courseCode: course.courseCode,
           'subject.subjectCode': subject.subjectCode
         }).sort({ createdAt: 1 });
 
         if (tests.length === 0) continue;
 
-        const students = await Student.find({ course: course._id })
+        const students = await Student.find({ course: course.courseCode })
           .sort({ enrollmentNo: 1 });
 
         const studentResults = [];
@@ -718,48 +891,31 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
                 totalQuestions: test.questions.length,
                 maxMarks: test.questions.length,
                 duration: test.duration,
-                testType: test.testType || 'official'
+                testType: test.testType
               },
-              result: submission ? {
-                status: 'attempted',
-                score: submission.score,
-                totalQuestions: submission.totalQuestions,
-                percentage: Math.round((submission.score / submission.totalQuestions) * 100),
-                submittedAt: submission.submittedAt,
-                testStartedOn: submission.createdAt,
-                timeSpent: submission.timeSpent,
-                answers: submission.answers,
+              result: {
+                score: submission ? submission.score : 0,
+                totalMarks: test.questions.length,
+                percentage: submission ? Math.round((submission.score / test.questions.length) * 100) : 0,
+                status: submission ? 'attempted' : 'not_attempted',
+                submittedAt: submission ? submission.submittedAt : null,
                 internalMarks: internalMark ? {
                   marks: internalMark.internalMarks,
                   comments: internalMark.evaluatorComments,
-                  evaluatedBy: internalMark.evaluatedBy,
-                  evaluatedAt: internalMark.createdAt
-                } : null
-              } : {
-                status: 'not_attempted',
-                score: 0,
-                totalQuestions: test.questions.length,
-                percentage: 0,
-                internalMarks: internalMark ? {
-                  marks: internalMark.internalMarks,
-                  comments: internalMark.evaluatorComments,
-                  evaluatedBy: internalMark.evaluatedBy,
-                  evaluatedAt: internalMark.createdAt
+                  enteredBy: internalMark.enteredBy,
+                  enteredAt: internalMark.updatedAt
                 } : null
               }
             };
-
             testResults.push(testResult);
           }
 
           studentResults.push({
             student: {
               _id: student._id,
-              fullName: student.fullName,
               enrollmentNo: student.enrollmentNo,
-              emailId: student.emailId,
-              course: student.course,
-              fatherName: student.fatherName
+              fullName: student.fullName,
+              course: student.course
             },
             testResults: testResults
           });
@@ -779,31 +935,63 @@ router.get('/reports/course-subject', adminAuth, async (req, res) => {
             _id: test._id,
             title: test.displayTitle,
             totalQuestions: test.questions.length,
-            createdAt: test.createdAt,
             duration: test.duration,
-            testType: test.testType || 'official'
+            testType: test.testType,
+            createdAt: test.createdAt
           })),
-          studentResults: studentResults,
-          statistics: {
-            totalStudents: students.length,
-            totalTests: tests.length,
-            averageScore: studentResults.length > 0 ?
-              studentResults.reduce((sum, sr) => {
-                const totalScore = sr.testResults.reduce((testSum, tr) => testSum + tr.result.score, 0);
-                return sum + totalScore;
-              }, 0) / (studentResults.length * tests.length) : 0
-          }
+          studentResults: studentResults
         });
+
+        reportCount++;
+        
+        // Break if we've collected enough reports for this page
+        if (page && limit && reports.length >= limitNum) {
+          break;
+        }
+      }
+      
+      // Break outer loop if we've collected enough reports
+      if (page && limit && reports.length >= limitNum) {
+        break;
       }
     }
 
-    res.json({ reports });
+    // Calculate total count for pagination (expensive but necessary)
+    let totalReports = 0;
+    if (page && limit) {
+      for (const course of courses) {
+        for (const subject of course.subjects) {
+          if (subjectCode && subjectCode !== 'all' && subject.subjectCode !== subjectCode) {
+            continue;
+          }
+          const hasTests = await Test.countDocuments({
+            courseCode: course.courseCode,
+            'subject.subjectCode': subject.subjectCode
+          });
+          if (hasTests > 0) totalReports++;
+        }
+      }
+    }
+
+    const response = {
+      reports
+    };
+
+    if (page && limit) {
+      response.pagination = {
+        page: pageNum,
+        limit: limitNum,
+        total: totalReports,
+        pages: Math.ceil(totalReports / limitNum),
+        hasNext: pageNum * limitNum < totalReports,
+        hasPrev: pageNum > 1
+      };
+    }
+
+    res.json(response);
   } catch (error) {
-    console.error('Get reports error:', error);
-    res.status(500).json({
-      message: 'Server error while fetching reports',
-      error: error.message
-    });
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ message: 'Server error while fetching reports' });
   }
 });
 
@@ -1057,7 +1245,7 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
       isCompleted: true,
       testType: testType,
       submittedAt: { $gte: startDate, $lte: endDate }
-    }).populate('testId', 'subject').limit(100);
+    }).populate('testId', 'subject').populate('userId', 'course').limit(100);
 
     const subjects = [...new Set(allSubmissions.map(sub =>
       sub.testId?.subject?.subjectCode
@@ -1071,7 +1259,38 @@ router.get('/attendance/data', adminAuth, async (req, res) => {
       };
     }).sort((a, b) => a.code.localeCompare(b.code));
 
-    const courses = [...new Set(allSubmissions.map(sub => sub.course).filter(Boolean))].map(courseCode => ({
+    const courses = [...new Set(allSubmissions.map(sub => {
+      const courseValue = sub.userId?.course;
+      if (!courseValue) return null;
+      
+      let courseCode = courseValue.trim();
+      
+      // Handle different patterns:
+      // "BCA - Bachelor of Computer Applications" -> "BCA"
+      // "BCA: Bachelor of Computer Applications" -> "BCA"  
+      // "Bachelor of Computer Applications (BCA)" -> "BCA"
+      // "BCA" -> "BCA"
+      
+      if (courseCode.includes(' - ')) {
+        courseCode = courseCode.split(' - ')[0].trim();
+      } else if (courseCode.includes(': ')) {
+        courseCode = courseCode.split(': ')[0].trim();
+      } else if (courseCode.includes('(') && courseCode.includes(')')) {
+        // Extract code from parentheses: "Bachelor of Computer Applications (BCA)" -> "BCA"
+        const match = courseCode.match(/\(([^)]+)\)$/);
+        if (match) {
+          courseCode = match[1].trim();
+        } else {
+          // If no parentheses pattern, take first word
+          courseCode = courseCode.split(' ')[0].trim();
+        }
+      } else if (courseCode.includes(' ')) {
+        // If it's multiple words without separators, take first word
+        courseCode = courseCode.split(' ')[0].trim();
+      }
+      
+      return courseCode;
+    }).filter(Boolean))].map(courseCode => ({
       courseCode,
       courseName: courseCode
     }));

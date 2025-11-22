@@ -24,17 +24,68 @@ router.post('/:courseId/make-results-private', adminAuth, async (req, res) => {
   }
 });
 
-// Get all courses
+// Get all courses with pagination
 router.get('/', async (req, res) => {
   try {
-    const courses = await Course.find({ isActive: { $ne: false } })
+    const {
+      page,
+      limit,
+      search,
+      includeInactive = 'false'
+    } = req.query;
+
+    // If no pagination params, return all courses for backward compatibility
+    if (!page && !limit) {
+      const filter = includeInactive === 'true' ? {} : { isActive: { $ne: false } };
+      
+      const courses = await Course.find(filter)
+        .populate('createdBy', 'name')
+        .sort({ createdAt: -1 });
+
+      console.log('Courses found:', courses.length);
+      res.json({ courses });
+      return;
+    }
+
+    // Pagination logic
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filter object
+    const filter = includeInactive === 'true' ? {} : { isActive: { $ne: false } };
+    
+    if (search) {
+      filter.$or = [
+        { courseName: { $regex: search, $options: 'i' } },
+        { courseCode: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get total count for pagination
+    const total = await Course.countDocuments(filter);
+    
+    // Get courses with pagination
+    const courses = await Course.find(filter)
       .populate('createdBy', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
-    console.log('Courses found:', courses.length);
-    console.log('Courses data:', courses);
+    console.log('Courses found:', courses.length, 'of', total);
 
-    res.json({ courses });
+    res.json({
+      courses,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1
+      }
+    });
   } catch (error) {
     console.error('Error fetching courses:', error);
     res.status(500).json({ message: 'Server error while fetching courses' });

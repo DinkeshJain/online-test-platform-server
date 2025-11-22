@@ -653,11 +653,55 @@ router.get('/students/download-template', (req, res) => {
   }
 });
 
-// Get all students
+// Get all students with pagination and search
 router.get('/students/all', adminAuth, async (req, res) => {
   try {
-    const students = await Student.find({})
-      .sort({ enrollmentNo: 1 });
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      course,
+      batchYear,
+      sortBy = 'enrollmentNo',
+      sortOrder = 'asc'
+    } = req.query;
+
+    // Build filter object
+    const filter = {};
+    
+    if (search) {
+      filter.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { enrollmentNo: { $regex: search, $options: 'i' } },
+        { emailId: { $regex: search, $options: 'i' } },
+        { mobileNo: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    if (course && course !== 'all') {
+      filter.course = course;
+    }
+    
+    if (batchYear && batchYear !== 'all') {
+      filter.batchYear = batchYear;
+    }
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit))); // Cap at 200
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build sort object
+    const sortObj = {};
+    sortObj[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Get total count for pagination
+    const total = await Student.countDocuments(filter);
+    
+    // Get students with pagination
+    const students = await Student.find(filter)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum);
 
     // Map the fields to match frontend expectations while keeping all data for editing
     const mappedStudents = students.map(student => ({
@@ -690,7 +734,21 @@ router.get('/students/all', adminAuth, async (req, res) => {
 
     res.json({
       students: mappedStudents,
-      total: mappedStudents.length
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1
+      },
+      filters: {
+        search,
+        course,
+        batchYear,
+        sortBy,
+        sortOrder
+      }
     });
   } catch (error) {
     console.error('Error getting students:', error);
@@ -889,6 +947,54 @@ router.get('/students/:id', adminAuth, async (req, res) => {
       message: 'Error fetching student',
       error: error.message
     });
+  }
+});
+
+// Search students endpoint for better performance
+router.get('/students/search', adminAuth, async (req, res) => {
+  try {
+    const { q, limit = 50, course, batchYear } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.json({ students: [], message: 'Search query too short' });
+    }
+
+    const filter = {
+      $or: [
+        { fullName: { $regex: q, $options: 'i' } },
+        { enrollmentNo: { $regex: q, $options: 'i' } },
+        { emailId: { $regex: q, $options: 'i' } },
+        { mobileNo: { $regex: q, $options: 'i' } }
+      ]
+    };
+    
+    if (course && course !== 'all') {
+      filter.course = course;
+    }
+    
+    if (batchYear && batchYear !== 'all') {
+      filter.batchYear = batchYear;
+    }
+
+    const students = await Student.find(filter)
+      .select('fullName enrollmentNo course batchYear emailId mobileNo')
+      .sort({ enrollmentNo: 1 })
+      .limit(parseInt(limit));
+
+    const mappedStudents = students.map(student => ({
+      _id: student._id,
+      name: student.fullName,
+      enrollmentNumber: student.enrollmentNo,
+      batchYear: student.batchYear,
+      course: student.course,
+      emailId: student.emailId,
+      mobileNo: student.mobileNo
+    }));
+
+    res.json({ students: mappedStudents });
+  } catch (error) {
+    console.error('Student search error:', error);
+    res.status(500).json({ message: 'Error searching students', error: error.message });
   }
 });
 

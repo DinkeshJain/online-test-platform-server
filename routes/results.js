@@ -182,7 +182,7 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
 
     // Get tests for this course and subject
     let testQuery = {
-      course: course.courseCode,
+      course: course._id,
       'subject.subjectCode': subjectCode
     };
     if (examType) {
@@ -747,13 +747,19 @@ router.get('/subjects-by-course/:courseId', async (req, res) => {
   try {
     const courseId = req.params.courseId;
 
+    // First fetch the course to get its courseCode
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
     // Get subjects that have tests for this course
-    const tests = await Test.find({ course: course.courseCode }).distinct('subject.subjectCode');
+    const tests = await Test.find({ course: course._id }).distinct('subject.subjectCode');
     const subjects = [];
 
     for (const subjectCode of tests) {
       const testWithSubject = await Test.findOne({
-        course: course.courseCode,
+        course: course._id,
         'subject.subjectCode': subjectCode
       }).select('subject');
 
