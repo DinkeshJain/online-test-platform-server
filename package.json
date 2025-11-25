@@ -13,7 +13,9 @@
     "migration:testtype:execute": "node scripts/add-testtype-to-submissions.js --execute",
     "export:pdf": "node scripts/exportPDF.js",
     "export:pdf:combined": "node scripts/exportPDF.js --combined-only",
-    "export:pdf:separate": "node scripts/exportPDF.js --separate-only"
+    "export:pdf:separate": "node scripts/exportPDF.js --separate-only",
+    "migrate:mongo-to-mysql": "node scripts/run-migration.js",
+    "migrate:direct": "node scripts/mongodb-to-mysql-migration.js"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +32,7 @@
     "moment-timezone": "^0.6.0",
     "mongoose": "^8.18.1",
     "multer": "^2.0.2",
+    "mysql2": "^3.6.5",
     "node-cron": "^4.2.1",
     "puppeteer": "^24.22.3",
     "xlsx": "^0.18.5"

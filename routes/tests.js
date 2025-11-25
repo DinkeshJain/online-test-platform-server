@@ -134,7 +134,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
       return res.status(400).json({ message: 'No Excel file uploaded' });
     }
 
-    const { duration, course, subject, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, courseCode, courseName, subject, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     if (!duration) {
       return res.status(400).json({ message: 'Duration is required' });
@@ -196,14 +196,26 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
     let parsedActiveTo = null;
 
     if (activeFrom) {
-      parsedActiveFrom = new Date(activeFrom);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeFrom.includes('+') && !activeFrom.includes('Z') && activeFrom.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveFrom = new Date(activeFrom + '+05:30');
+      } else {
+        parsedActiveFrom = new Date(activeFrom);
+      }
       if (isNaN(parsedActiveFrom.getTime())) {
         return res.status(400).json({ message: 'Invalid activeFrom date format' });
       }
     }
 
     if (activeTo) {
-      parsedActiveTo = new Date(activeTo);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeTo.includes('+') && !activeTo.includes('Z') && activeTo.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveTo = new Date(activeTo + '+05:30');
+      } else {
+        parsedActiveTo = new Date(activeTo);
+      }
       if (isNaN(parsedActiveTo.getTime())) {
         return res.status(400).json({ message: 'Invalid activeTo date format' });
       }
@@ -218,6 +230,8 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
     const test = new Test({
       duration,
       course,
+      courseCode,
+      courseName,
       subject: parsedSubject,
       questions,
       createdBy: req.user._id,
@@ -256,7 +270,7 @@ router.post('/import-excel', adminAuth, upload.single('excelFile'), async (req, 
 // Create a new test (Admin only)
 router.post('/', adminAuth, async (req, res) => {
   try {
-    const { duration, course, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, courseCode, courseName, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     // Validate required fields
     if (!duration || !course || !subject) {
@@ -276,14 +290,26 @@ router.post('/', adminAuth, async (req, res) => {
     let parsedActiveTo = null;
 
     if (activeFrom) {
-      parsedActiveFrom = new Date(activeFrom);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeFrom.includes('+') && !activeFrom.includes('Z') && activeFrom.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveFrom = new Date(activeFrom + '+05:30');
+      } else {
+        parsedActiveFrom = new Date(activeFrom);
+      }
       if (isNaN(parsedActiveFrom.getTime())) {
         return res.status(400).json({ message: 'Invalid activeFrom date format' });
       }
     }
 
     if (activeTo) {
-      parsedActiveTo = new Date(activeTo);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeTo.includes('+') && !activeTo.includes('Z') && activeTo.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveTo = new Date(activeTo + '+05:30');
+      } else {
+        parsedActiveTo = new Date(activeTo);
+      }
       if (isNaN(parsedActiveTo.getTime())) {
         return res.status(400).json({ message: 'Invalid activeTo date format' });
       }
@@ -296,6 +322,8 @@ router.post('/', adminAuth, async (req, res) => {
     const test = new Test({
       duration,
       course,
+      courseCode,
+      courseName,
       subject,
       questions,
       createdBy: req.user._id,
@@ -569,7 +597,7 @@ router.get('/:id/edit', adminAuth, async (req, res) => {
 // Update test (Admin only)
 router.put('/:id', adminAuth, async (req, res) => {
   try {
-    const { duration, course, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
+    const { duration, course, courseCode, courseName, subject, questions, isActive, showScoresToStudents, activeFrom, activeTo, shuffleQuestions, shuffleOptions, testType } = req.body;
 
     // Validate required fields
     if (course !== undefined && !course) {
@@ -585,14 +613,26 @@ router.put('/:id', adminAuth, async (req, res) => {
     let parsedActiveTo = null;
 
     if (activeFrom) {
-      parsedActiveFrom = new Date(activeFrom);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeFrom.includes('+') && !activeFrom.includes('Z') && activeFrom.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveFrom = new Date(activeFrom + '+05:30');
+      } else {
+        parsedActiveFrom = new Date(activeFrom);
+      }
       if (isNaN(parsedActiveFrom.getTime())) {
         return res.status(400).json({ message: 'Invalid activeFrom date format' });
       }
     }
 
     if (activeTo) {
-      parsedActiveTo = new Date(activeTo);
+      // Parse datetime and treat as IST if no timezone specified
+      if (!activeTo.includes('+') && !activeTo.includes('Z') && activeTo.includes('T')) {
+        // For datetime-local input, treat as IST and convert to UTC
+        parsedActiveTo = new Date(activeTo + '+05:30');
+      } else {
+        parsedActiveTo = new Date(activeTo);
+      }
       if (isNaN(parsedActiveTo.getTime())) {
         return res.status(400).json({ message: 'Invalid activeTo date format' });
       }
@@ -609,6 +649,8 @@ router.put('/:id', adminAuth, async (req, res) => {
 
     test.duration = duration || test.duration;
     test.course = course || test.course;
+    test.courseCode = courseCode || test.courseCode;
+    test.courseName = courseName || test.courseName;
 
     // Update subject if provided
     if (subject) {

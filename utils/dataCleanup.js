@@ -211,19 +211,44 @@ class DataCleanupUtility {
   /**
    * Quick consistency check for API responses
    * Returns summary of inconsistencies without detailed logging
+   * Uses count-based queries instead of loading all records for better performance
    */
   static async quickConsistencyCheck() {
     try {
-      const orphanedRecords = await this.findOrphanedRecords();
-      
+      // Use aggregation to count orphaned records without loading all data
+      const [
+        orphanedSubmissionsByStudent,
+        orphanedSubmissionsByTest,
+        orphanedInternalMarksByStudent,
+        orphanedInternalMarksByTest,
+        orphanedInternalMarksByCourse,
+        orphanedTestsByCourse,
+        orphanedStudentsByCourse
+      ] = await Promise.all([
+        // Count submissions with invalid student references
+        Submission.countDocuments({ userId: { $exists: false } }),
+        // Count submissions with invalid test references  
+        Submission.countDocuments({ testId: { $exists: false } }),
+        // Count internal marks with invalid student references
+        InternalMarks.countDocuments({ studentId: { $exists: false } }),
+        // Count internal marks with invalid test references
+        InternalMarks.countDocuments({ testId: { $exists: false } }),
+        // Count internal marks with invalid course references
+        InternalMarks.countDocuments({ courseId: { $exists: false } }),
+        // Count tests with invalid course references
+        Test.countDocuments({ course: { $exists: false } }),
+        // Count students with invalid course references
+        Student.countDocuments({ course: { $exists: false } })
+      ]);
+
       const summary = {
         hasInconsistencies: false,
         totalOrphaned: 0,
         details: {
-          orphanedSubmissions: orphanedRecords.submissions.orphanedByStudent.length + orphanedRecords.submissions.orphanedByTest.length,
-          orphanedInternalMarks: orphanedRecords.internalMarks.orphanedByStudent.length + orphanedRecords.internalMarks.orphanedByTest.length + orphanedRecords.internalMarks.orphanedByCourse.length,
-          orphanedTests: orphanedRecords.tests.orphanedByCourse.length,
-          orphanedStudents: orphanedRecords.students.orphanedByCourse.length
+          orphanedSubmissions: orphanedSubmissionsByStudent + orphanedSubmissionsByTest,
+          orphanedInternalMarks: orphanedInternalMarksByStudent + orphanedInternalMarksByTest + orphanedInternalMarksByCourse,
+          orphanedTests: orphanedTestsByCourse,
+          orphanedStudents: orphanedStudentsByCourse
         }
       };
       

@@ -171,11 +171,11 @@ router.get('/course/:courseId/subjects', async (req, res) => {
   }
 });
 
-// Get detailed report for a specific course and subject (OPTIMIZED)
+// Get detailed report for a specific course and subject (OPTIMIZED FOR LARGE DATASETS)
 router.get('/reports/:courseId/:subjectCode', async (req, res) => {
   try {
     const { courseId, subjectCode } = req.params;
-    const { examType } = req.query;
+    const { examType, page = 1, limit = 50 } = req.query;
 
     const course = await Course.findById(courseId);
     if (!course) return res.status(404).json({ message: 'Course not found' });
@@ -195,57 +195,73 @@ router.get('/reports/:courseId/:subjectCode', async (req, res) => {
     }
 
     const testIds = tests.map(test => test._id);
+    
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
-    // Get submissions for these tests
+    // Get students for this course with pagination
+    let studentQuery = {
+      course: course.courseCode
+    };
+    
+    // Count total students for pagination
+    const totalStudents = await Student.countDocuments(studentQuery);
+    
+    const students = await Student.find(studentQuery)
+      .select('enrollmentNo fullName emailId fatherName _id')
+      .sort({ enrollmentNo: 1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const studentIds = students.map(s => s._id);
+
+    // OPTIMIZATION: Batch fetch submissions for all students at once
     let submissionQuery = {
       testId: { $in: testIds },
+      userId: { $in: studentIds },
       isDraft: false,
       isCompleted: true
     };
 
-    const submissions = await Submission.find(submissionQuery);
+    const submissions = await Submission.find(submissionQuery)
+      .select('userId testId score totalQuestions submittedAt testStartedAt timeSpent answers createdAt')
+      .lean(); // Use lean() for better performance
 
-    // FIXED: Get students for this course using ObjectId
-    const students = await Student.find({
-      course: course.courseCode  // Fixed: Use courseId instead of course.courseCode
-    }).select('enrollmentNo fullName emailId fatherName _id');
+    // OPTIMIZATION: Batch fetch internal marks for all students at once
+    const internalMarks = await InternalMarks.find({
+      studentId: { $in: studentIds },
+      courseId: courseId,
+      subjectCode: subjectCode
+    }).lean();
 
-    // Create student lookup map for faster access
-    const studentMap = new Map();
-    students.forEach(student => {
-      studentMap.set(student._id.toString(), student);
+    // Create lookup maps for O(1) access
+    const submissionsByStudentAndTest = new Map();
+    submissions.forEach(submission => {
+      const key = `${submission.userId}_${submission.testId}`;
+      submissionsByStudentAndTest.set(key, submission);
     });
 
-    // Group submissions by student
-    const submissionsByStudent = new Map();
-    submissions.forEach(submission => {
-      const studentId = submission.userId.toString();
-      if (!submissionsByStudent.has(studentId)) {
-        submissionsByStudent.set(studentId, []);
-      }
-      submissionsByStudent.get(studentId).push(submission);
+    const internalMarksByStudent = new Map();
+    internalMarks.forEach(mark => {
+      internalMarksByStudent.set(mark.studentId.toString(), mark);
     });
 
     const studentResults = [];
 
-    // Process each student
+    // Process each student using pre-fetched data
     for (const student of students) {
       const studentId = student._id.toString();
-      const studentSubmissions = submissionsByStudent.get(studentId) || [];
       const testResults = [];
 
       for (const test of tests) {
-        // Find submission for this test
-        const submission = studentSubmissions.find(
-          sub => sub.testId.toString() === test._id.toString()
-        );
+        // Find submission using lookup map (O(1) access)
+        const submissionKey = `${studentId}_${test._id}`;
+        const submission = submissionsByStudentAndTest.get(submissionKey);
 
-        // Get internal marks
-        const internalMark = await InternalMarks.findOne({
-          studentId: student._id,
-          courseId: courseId,
-          subjectCode: subjectCode
-        });
+        // Get internal marks using lookup map (O(1) access)
+        const internalMark = internalMarksByStudent.get(studentId);
 
         const testResult = {
           test: {
